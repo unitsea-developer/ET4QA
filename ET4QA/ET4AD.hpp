@@ -244,6 +244,10 @@ namespace ad {
             return 0;
         };
 
+        void Push(std::vector<Statement> &statements) {
+
+        }
+
         const REAL_T &value_m;
 
 
@@ -264,6 +268,12 @@ namespace ad {
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return lhs_m.Derivative(id, found) + rhs_m.Derivative(id, found);
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            this->rhs_m.Push(statements);
+            statements.push_back(Statement(PLUS));
         }
 
 
@@ -294,6 +304,12 @@ namespace ad {
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return lhs_m.Derivative(id, found) - rhs_m.Derivative(id, found);
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            this->rhs_m.Push(statements);
+            statements.push_back(Statement(MINUS));
         }
 
     protected:
@@ -328,6 +344,12 @@ namespace ad {
             return lhs_m.Derivative(id, found) * rhs_m.GetValue() + lhs_m.GetValue() * rhs_m.Derivative(id, found);
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            this->rhs_m.Push(statements);
+            statements.push_back(Statement(MULTIPLY));
+        }
+
     private:
 
         const LHS& lhs_m;
@@ -356,6 +378,12 @@ namespace ad {
             return (lhs_m.Derivative(id, found) * rhs_m.GetValue() - lhs_m.GetValue() * rhs_m.Derivative(id, found)) / (rhs_m.GetValue() * rhs_m.GetValue());
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            this->rhs_m.Push(statements);
+            statements.push_back(Statement(DIVIDE));
+        }
+
     private:
 
         const LHS& lhs_m;
@@ -373,21 +401,26 @@ namespace ad {
     struct LiteralAdd : public ExpressionBase<LiteralAdd<LHS> > {
 
         LiteralAdd(const ExpressionBase<LHS>& lhs, const REAL_T & rhs)
-        : lhs_m(lhs.Cast()), value_m(lhs_m.GetValue() + rhs) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs) {
         }
 
         const REAL_T GetValue() const {
-            return value_m;
+            return lhs_m.GetValue() + rhs_m;
         }
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return lhs_m.Derivative(id, found);
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            statements.push_back(Statement(CONSTANT, rhs_m));
+            statements.push_back(Statement(PLUS));
+        }
 
     private:
         const LHS& lhs_m;
-        REAL_T value_m;
+        REAL_T rhs_m;
     };
 
     template <class LHS>
@@ -408,42 +441,53 @@ namespace ad {
     struct LiteralMinus : public ExpressionBase<LiteralMinus<LHS> > {
 
         LiteralMinus(const ExpressionBase<LHS>& lhs, const REAL_T & rhs)
-        : lhs_m(lhs.Cast()), value_m(lhs_m.GetValue() - rhs) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs) {
         }
 
         const REAL_T GetValue() const {
-            return value_m;
+            return lhs_m.GetValue() - rhs_m;
         }
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return lhs_m.Derivative(id, found);
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            statements.push_back(Statement(CONSTANT, rhs_m));
+            statements.push_back(Statement(MINUS));
+        }
+
 
     private:
         const LHS& lhs_m;
-        REAL_T value_m;
+        REAL_T rhs_m;
     };
 
     template <class RHS>
     struct MinusLiteral : public ExpressionBase<MinusLiteral<RHS> > {
 
         MinusLiteral(const REAL_T & lhs, const ExpressionBase<RHS>& rhs)
-        : rhs_m(rhs.Cast()), value_m(lhs - rhs_m.GetValue()) {
+        : rhs_m(rhs.Cast()), lhs_m(lhs) {
         }
 
         const REAL_T GetValue() const {
-            return value_m;
+            return lhs_m - rhs_m.GetValue();
         }
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return -1.0 * rhs_m.Derivative(id, found);
         }
 
+        void Push(std::vector<Statement> &statements) {
+            statements.push_back(Statement(CONSTANT, lhs_m));
+            this->rhs_m.Push(statements);
+            statements.push_back(Statement(MINUS));
+        }
 
     private:
         const RHS& rhs_m;
-        REAL_T value_m;
+        REAL_T lhs_m;
     };
 
     template <class LHS>
@@ -463,22 +507,28 @@ namespace ad {
     template <class LHS>
     struct LiteralTimes : public ExpressionBase<LiteralTimes<LHS> > {
 
-        LiteralTimes(const ExpressionBase<LHS>& lhs, const REAL_T & rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs) {
+        LiteralTimes(const REAL_T & lhs, const ExpressionBase<LHS>& rhs)
+        : lhs_m(lhs), rhs_m(rhs.Cast()) {
         }
 
         const REAL_T GetValue() const {
-            return rhs_m * lhs_m.GetValue();
+            return lhs_m * rhs_m.GetValue();
         }
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
-            return lhs_m.Derivative(id, found) * rhs_m;
+            return rhs_m.Derivative(id, found) * rhs_m;
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            statements.push_back(Statement(CONSTANT, lhs_m));
+            this->rhs_m.Push(statements);
+            statements.push_back(Statement(MULTIPLY));
         }
 
 
     private:
-        const LHS& lhs_m;
-        REAL_T rhs_m;
+        const LHS& rhs_m;
+        REAL_T lhs_m;
     };
 
     template <class LHS>
@@ -494,6 +544,12 @@ namespace ad {
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return rhs_m * lhs_m.Derivative(id, found);
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            statements.push_back(Statement(CONSTANT, rhs_m));
+            statements.push_back(Statement(MULTIPLY));
         }
 
 
@@ -531,6 +587,12 @@ namespace ad {
             return ( -rhs_m.Derivative(id, found) * lhs_m) / (rhs_m.GetValue() * rhs_m.GetValue());
         }
 
+        void Push(std::vector<Statement> &statements) {
+            statements.push_back(Statement(CONSTANT, lhs_m));
+            this->rhs_m.Push(statements);
+            statements.push_back(Statement(DIVIDE));
+        }
+
 
     private:
         const RHS& rhs_m;
@@ -550,6 +612,12 @@ namespace ad {
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return (lhs_m.Derivative(id, found) * rhs_m) / (rhs_m * rhs_m);
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            this->lhs_m.Push(statements);
+            statements.push_back(Statement(CONSTANT, rhs_m));
+            statements.push_back(Statement(DIVIDE));
         }
 
 
@@ -593,6 +661,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(SIN));
+        }
 
     private:
         const EXPR& expr_m;
@@ -619,6 +691,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(COS));
+        }
 
     private:
         const EXPR& expr_m;
@@ -646,6 +722,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(TAN));
+        }
 
     private:
         const EXPR& expr_m;
@@ -671,6 +751,11 @@ namespace ad {
             } else {
                 return 0.0;
             }
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(ASIN));
         }
 
 
@@ -700,6 +785,11 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(ACOS));
+        }
+
 
     private:
         const EXPR& expr_m;
@@ -727,6 +817,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(ATAN));
+        }
 
     private:
         const EXPR& expr_m;
@@ -754,6 +848,12 @@ namespace ad {
             } else {
                 return 0.0;
             }
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            this->expr1_m.Push(statements);
+            this->expr2_m.Push(statements);
+            statements.push_back(Statement(ATAN));
         }
 
     private:
@@ -786,6 +886,12 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->expr1_m.Push(statements);
+            statements.push_back(Statement(CONSTANT, expr2_m));
+            statements.push_back(Statement(ATAN2));
+        }
+
     private:
 
         const EXPR1& expr1_m;
@@ -816,6 +922,12 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            statements.push_back(Statement(CONSTANT, expr1_m));
+            expr2_m.Push(statements);
+            statements.push_back(Statement(ATAN2));
+        }
+
     private:
 
         const REAL_T& expr1_m;
@@ -843,6 +955,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(SQRT));
+        }
 
     private:
         const EXPR& expr_m;
@@ -872,6 +988,13 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            this->expr1_m.Push(statements);
+            this->expr2_m.Push(statements);
+            statements.push_back(Statement(POW));
+        }
+
+
     private:
 
         const EXPR1& expr1_m;
@@ -900,6 +1023,13 @@ namespace ad {
                 return 0.0;
             }
         }
+
+        void Push(std::vector<Statement> &statements) {
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(CONSTANT, literal_m));
+            statements.push_back(Statement(POW));
+        }
+
 
     private:
 
@@ -931,6 +1061,12 @@ namespace ad {
             return 0.0;
         }
 
+        void Push(std::vector<Statement> &statements) {
+            statements.push_back(Statement(CONSTANT, literal_m));
+            this->expr_m.Push(statements);
+            statements.push_back(Statement(POW));
+        }
+
     private:
 
         const REAL_T& literal_m;
@@ -959,6 +1095,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(LOG));
+        }
 
     private:
         const EXPR& expr_m;
@@ -983,6 +1123,11 @@ namespace ad {
             } else {
                 return 0.0;
             }
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(LOG10));
         }
 
 
@@ -1013,6 +1158,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(EXP));
+        }
 
     private:
         const EXPR& expr_m;
@@ -1039,6 +1188,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(SINH));
+        }
 
     private:
         const EXPR& expr_m;
@@ -1065,6 +1218,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(COSH));
+        }
 
     private:
         const EXPR& expr_m;
@@ -1092,6 +1249,10 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(TANH));
+        }
 
     private:
         const EXPR& expr_m;
@@ -1119,6 +1280,11 @@ namespace ad {
             }
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(FABS));
+        }
+
 
     private:
         const EXPR& expr_m;
@@ -1137,6 +1303,11 @@ namespace ad {
 
         const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
             return 0.0;
+        }
+
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(FLOOR));
         }
 
 
@@ -1159,19 +1330,17 @@ namespace ad {
             return 0.0;
         }
 
+        void Push(std::vector<Statement> &statements) {
+            expr_m.Push(statements);
+            statements.push_back(Statement(CEIL));
+        }
+
 
     private:
         const EXPR& expr_m;
     };
 
     class Variable : public ExpressionBase<Variable> {
-
-        struct eqstr {
-
-            bool operator()(uint32_t s1, uint32_t s2) const {
-                return s1>s2;
-            }
-        };
 
         REAL_T value_m;
         std::string name_m;
@@ -2032,6 +2201,13 @@ namespace std {
 
 
 }
+
+
+/**
+ * Array components.
+ */
+
+
 
 #endif	/* ETAD_HPP */
 
