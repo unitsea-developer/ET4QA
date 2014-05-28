@@ -15,6 +15,8 @@
 #include <iomanip>
 #include <sys/timeb.h>
 #include <sstream>
+#include "BigFloat.hpp"
+#include "ET4AD.hpp"
 
 #if defined(WIN32) || defined(WIN64)
 
@@ -102,14 +104,14 @@
 
 #endif
 
-#define HAVE_ADMB
+//#define HAVE_ADMB
 
 #ifdef HAVE_ADMB
 #include <fvar.hpp>
 #endif
 namespace ad {
 
-    //#define HAVE_GSL
+    //    #define HAVE_GSL
 
 
 #ifdef HAVE_GSL
@@ -136,7 +138,7 @@ namespace ad {
 #ifdef HAVE_ADMB
             ADMB_AUTODIFF_MINIMIZER,
 #endif
-                    
+
 #ifdef HAVE_GSL
             GSL_CONJUGATE_FR,
             GSL_CONJUGATE_PR,
@@ -592,15 +594,17 @@ namespace ad {
 
 
 
+            //            ad::Variable<T> f;
+
             std::vector<T> xp2h(n);
             std::vector<T> xph(n);
             std::vector<T> xm2h(n);
             std::vector<T> xmh(n);
 
-            ad::Variable<T> fp2h;
-            ad::Variable<T> fph;
-            ad::Variable<T> fm2h;
-            ad::Variable<T> fmh;
+            T fp2h;
+            T fph;
+            T fm2h;
+            T fmh;
 
             //updaste parameters
             for (size_t j = 0; j < n; j++) {
@@ -623,28 +627,32 @@ namespace ad {
             for (size_t i = 0; i < n; i++) {
                 active_parameters_m[i]->SetValue(xp2h[i]);
             }
-            this->ObjectiveFunction(fp2h); // dfdx(f, xp2h, xiref);
+            this->ObjectiveFunction(f); // dfdx(f, xp2h, xiref);
+            fp2h = f.WRT(*active_parameters_m[row]);
 
             for (size_t i = 0; i < n; i++) {
                 active_parameters_m[i]->SetValue(xph[i]);
             }
-            this->ObjectiveFunction(fph); //dfdx(f, xph, xiref);
+            this->ObjectiveFunction(f); //dfdx(f, xph, xiref);
+            fph = f.WRT(*active_parameters_m[row]);
 
             for (size_t i = 0; i < n; i++) {
                 active_parameters_m[i]->SetValue(xm2h[i]);
             }
-            this->ObjectiveFunction(fm2h); //dfdx(f, xm2h, xiref);
+            this->ObjectiveFunction(f); //dfdx(f, xm2h, xiref);
 
+            fm2h = f.WRT(*active_parameters_m[row]);
             for (size_t i = 0; i < n; i++) {
                 active_parameters_m[i]->SetValue(xmh[i]);
             }
-            this->ObjectiveFunction(fmh); //dfdx(f, xmh, xiref);
+            this->ObjectiveFunction(f); //dfdx(f, xmh, xiref);
+            fmh = f.WRT(*active_parameters_m[row]);
             //            std::cout<<"here...\n";
 
-            ff = (-1 * fp2h.WRT(*active_parameters_m[row]) +
-                    8.0 * fph.WRT(*active_parameters_m[row]) -
-                    8.0 * fmh.WRT(*active_parameters_m[row]) +
-                    fm2h.WRT(*active_parameters_m[row])) / 12.0 * hh;
+            ff = (-1 * fp2h +
+                    8.0 * fph) -
+                    8.0 * fmh +
+                    fm2h / 12.0 * hh;
 
 
             return ff;
@@ -1327,9 +1335,8 @@ namespace ad {
             ad::Variable<T> fx;
             fmm fmc(nvar);
             fmc.crit = tolerance;
-            fmc.iprint = 0;
-            std::cout << fmc << "\n";
-            //            fmc.dfn =0.01;
+            fmc.iprint = 10;
+            fmc.dfn = 0.01;
             //            exit(0);
             //            fmc.dfn    = 0.01;
             for (int i = 0; i < parameters.size(); i++) {
@@ -1377,9 +1384,9 @@ namespace ad {
                     }
                 }
 
-                                if (this->verbose_m && ((this->iteration_m % this->iprint_m) == 0)) {
-                                    this->Print(fx, gradient, parameters, "Verbose:\nMethod: ADMB");
-                                }
+//                if (this->verbose_m && ((this->iteration_m % this->iprint_m) == 0)) {
+//                    this->Print(fx, gradient, parameters, "Verbose:\nMethod: ADMB");
+//                }
 
                 //                iteration++;
             }

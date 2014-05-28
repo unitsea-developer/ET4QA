@@ -66,7 +66,8 @@
 #include <set>
 #include <iostream>
 #include <stack>
-
+#include <boost/container/set.hpp>
+#include <tr1/unordered_set>
 #define USE_MM_CACHE_MAP
 //#define USE_HASH_TABLE
 //this is the most crucial part of the software....we need a fast map!
@@ -82,7 +83,12 @@
 #else
 #include <map>
 #endif
+#include <google/dense_hash_set>
+#include <boost/unordered_set.hpp>
+//typedef google::dense_hash_set<uint32_t> IdsSet;
+typedef boost::unordered_set<uint32_t> IdsSet;
 
+#include "BigFloat.hpp"
 
 namespace ad {
 
@@ -183,7 +189,7 @@ namespace ad {
         return only_copy;
     }
 
-    template<class REAL_T>
+    template<class REAL_T, int group = 0 >
     class Variable;
 
     template<class REAL_T, class A>
@@ -204,7 +210,6 @@ namespace ad {
 
         inline const REAL_T GetValue() const {
             return Cast().GetValue();
-
         }
 
         inline const uint32_t GetId() const {
@@ -231,7 +236,9 @@ namespace ad {
             Cast().Push(statements);
         }
 
-        virtual void PushIds(std::set<uint32_t> &ids) const = 0;
+        inline void PushIds(IdsSet & ids) const {
+            Cast().PushIds(ids);
+        }
 
         uint32_t id_m;
 
@@ -263,7 +270,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (CONSTANT, value_m));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
 
         }
 
@@ -280,13 +287,13 @@ namespace ad {
     struct Add : public ExpressionBase<REAL_T, Add<REAL_T, LHS, RHS> > {
 
         Add(const ExpressionBase<REAL_T, LHS>& lhs, const ExpressionBase<REAL_T, RHS>& rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()), value_m(lhs_m.GetValue() + rhs_m.GetValue()) {
 
 
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() + rhs_m.GetValue();
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -304,7 +311,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (PLUS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
             this->rhs_m.PushIds(ids);
         }
@@ -315,6 +322,7 @@ namespace ad {
 
         const LHS& lhs_m;
         const RHS& rhs_m;
+        const REAL_T value_m;
     };
 
     template <class REAL_T, class LHS, class RHS>
@@ -328,11 +336,11 @@ namespace ad {
     struct Minus : public ExpressionBase<REAL_T, Minus<REAL_T, LHS, RHS> > {
 
         Minus(const ExpressionBase<REAL_T, LHS>& lhs, const ExpressionBase<REAL_T, RHS>& rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()), value_m(lhs_m.GetValue() - rhs_m.GetValue()) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() - rhs_m.GetValue();
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -350,7 +358,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (MINUS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
             this->rhs_m.PushIds(ids);
         }
@@ -363,6 +371,7 @@ namespace ad {
 
         const LHS& lhs_m;
         const RHS& rhs_m;
+        const REAL_T value_m;
     };
 
     template <class REAL_T, class LHS, class RHS>
@@ -376,11 +385,11 @@ namespace ad {
     struct Multiply : public ExpressionBase<REAL_T, Multiply<REAL_T, LHS, RHS> > {
 
         Multiply(const ExpressionBase<REAL_T, LHS>& lhs, const ExpressionBase<REAL_T, RHS>& rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()), value_m(lhs_m.GetValue() * rhs_m.GetValue()) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() * rhs_m.GetValue();
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -399,7 +408,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (MULTIPLY));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
             this->rhs_m.PushIds(ids);
         }
@@ -410,6 +419,7 @@ namespace ad {
 
         const LHS& lhs_m;
         const RHS& rhs_m;
+        const REAL_T value_m;
     };
 
     template <class REAL_T, class LHS, class RHS>
@@ -423,11 +433,11 @@ namespace ad {
     struct Divide : public ExpressionBase<REAL_T, Divide<REAL_T, LHS, RHS> > {
 
         Divide(const ExpressionBase<REAL_T, LHS>& lhs, const ExpressionBase<REAL_T, RHS>& rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs.Cast()), value_m(lhs_m.GetValue() / rhs_m.GetValue()) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() / rhs_m.GetValue();
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -445,7 +455,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (DIVIDE));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
             this->rhs_m.PushIds(ids);
         }
@@ -454,6 +464,7 @@ namespace ad {
 
         const LHS& lhs_m;
         const RHS& rhs_m;
+        const REAL_T value_m;
     };
 
     template <class REAL_T, class LHS, class RHS>
@@ -467,11 +478,12 @@ namespace ad {
     struct LiteralAdd : public ExpressionBase<REAL_T, LiteralAdd<REAL_T, LHS> > {
 
         LiteralAdd(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() + rhs) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() + rhs_m;
+            //            this->value_m = lhs_m.GetValue() + rhs_m;
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -488,7 +500,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (PLUS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
         }
 
@@ -497,6 +509,7 @@ namespace ad {
     private:
         const LHS& lhs_m;
         REAL_T rhs_m;
+        REAL_T value_m;
     };
 
     template <class REAL_T, class LHS>
@@ -517,11 +530,11 @@ namespace ad {
     struct LiteralMinus : public ExpressionBase<REAL_T, LiteralMinus<REAL_T, LHS> > {
 
         LiteralMinus(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() - rhs_m) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() - rhs_m;
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -538,7 +551,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (MINUS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
         }
 
@@ -547,17 +560,18 @@ namespace ad {
     private:
         const LHS& lhs_m;
         REAL_T rhs_m;
+        REAL_T value_m;
     };
 
     template <class REAL_T, class RHS>
     struct MinusLiteral : public ExpressionBase<REAL_T, MinusLiteral<REAL_T, RHS> > {
 
         MinusLiteral(const REAL_T & lhs, const ExpressionBase<REAL_T, RHS>& rhs)
-        : rhs_m(rhs.Cast()), lhs_m(lhs) {
+        : rhs_m(rhs.Cast()), lhs_m(lhs), value_m(lhs_m - rhs_m.GetValue()) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m - rhs_m.GetValue();
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -574,13 +588,15 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (MINUS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->rhs_m.PushIds(ids);
         }
 
     private:
         const RHS& rhs_m;
-        REAL_T lhs_m;
+        const REAL_T lhs_m;
+        const REAL_T value_m;
+
     };
 
     template <class REAL_T, class LHS>
@@ -601,11 +617,11 @@ namespace ad {
     struct LiteralTimes : public ExpressionBase<REAL_T, LiteralTimes<REAL_T, LHS> > {
 
         LiteralTimes(const REAL_T & lhs, const ExpressionBase<REAL_T, LHS>& rhs)
-        : lhs_m(lhs), rhs_m(rhs.Cast()) {
+        : lhs_m(lhs), rhs_m(rhs.Cast()), value_m(lhs_m * rhs_m.GetValue()) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m * rhs_m.GetValue();
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -622,7 +638,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (MULTIPLY));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->rhs_m.PushIds(ids);
         }
 
@@ -630,18 +646,19 @@ namespace ad {
 
     private:
         const LHS& rhs_m;
-        REAL_T lhs_m;
+        const REAL_T lhs_m;
+        const REAL_T value_m;
     };
 
     template <class REAL_T, class LHS>
     struct TimesLiteral : public ExpressionBase<REAL_T, TimesLiteral<REAL_T, LHS> > {
 
         TimesLiteral(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() * rhs_m) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() * rhs_m;
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -658,14 +675,15 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (MULTIPLY));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
         }
 
 
     private:
         const LHS& lhs_m;
-        REAL_T rhs_m;
+        const REAL_T rhs_m;
+        const REAL_T value_m;
     };
 
     template <class REAL_T, class LHS>
@@ -686,11 +704,11 @@ namespace ad {
     struct LiteralDivide : public ExpressionBase<REAL_T, LiteralDivide<REAL_T, RHS> > {
 
         LiteralDivide(const REAL_T & lhs, const ExpressionBase<REAL_T, RHS>& rhs)
-        : rhs_m(rhs.Cast()), lhs_m(lhs) {
+        : rhs_m(rhs.Cast()), lhs_m(lhs), value_m(lhs_m / rhs_m.GetValue()) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m / rhs_m.GetValue();
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -707,7 +725,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (DIVIDE));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->rhs_m.PushIds(ids);
         }
 
@@ -715,17 +733,18 @@ namespace ad {
     private:
         const RHS& rhs_m;
         REAL_T lhs_m;
+        REAL_T value_m;
     };
 
     template <class REAL_T, class LHS>
     struct DivideLiteral : public ExpressionBase<REAL_T, DivideLiteral<REAL_T, LHS> > {
 
         DivideLiteral(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
-        : lhs_m(lhs.Cast()), rhs_m(rhs) {
+        : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() / rhs_m) {
         }
 
         inline const REAL_T GetValue() const {
-            return lhs_m.GetValue() / rhs_m;
+            return value_m;
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -742,13 +761,14 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (DIVIDE));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->lhs_m.PushIds(ids);
         }
 
     private:
         const LHS& lhs_m;
         REAL_T rhs_m;
+        REAL_T value_m;
     };
 
     template <class REAL_T, class LHS>
@@ -795,7 +815,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (SIN));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -834,7 +854,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (COS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -876,7 +896,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (TAN));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -918,7 +938,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (ASIN));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -961,7 +981,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (ACOS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1003,7 +1023,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (ATAN));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1050,7 +1070,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (ATAN));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr2_m.PushIds(ids);
             this->expr2_m.PushIds(ids);
         }
@@ -1098,7 +1118,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (ATAN2));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr1_m.PushIds(ids);
         }
 
@@ -1145,7 +1165,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (ATAN2));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr2_m.PushIds(ids);
         }
 
@@ -1187,7 +1207,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (SQRT));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1230,7 +1250,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (POW));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr1_m.PushIds(ids);
             this->expr2_m.Push(ids);
         }
@@ -1276,7 +1296,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (POW));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1321,7 +1341,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (POW));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1348,7 +1368,7 @@ namespace ad {
             REAL_T dx = expr_m.Derivative(id, found);
 
             if (found) {
-                return (dx * 1.0) / expr_m.GetValue();
+                return (dx) / expr_m.GetValue();
             } else {
                 return 0.0;
             }
@@ -1363,7 +1383,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (LOG));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1403,7 +1423,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (LOG10));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1444,7 +1464,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (EXP));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1457,11 +1477,17 @@ namespace ad {
     struct MFExp : public ExpressionBase<REAL_T, MFExp<REAL_T, EXPR> > {
 
         MFExp(const ExpressionBase<REAL_T, EXPR>& expr)
-        : expr_m(expr.Cast()) {
+        : expr_m(expr.Cast()), value_m(Compute(expr.GetValue())) {
         }
 
         inline const REAL_T GetValue() const {
-            REAL_T x = expr_m.GetValue();
+            return value_m;
+            //
+            //            return std::exp(expr_m.GetValue());
+        }
+
+        const REAL_T Compute(const REAL_T & value) {
+            REAL_T x = value;
             REAL_T b = REAL_T(60);
             if (x <= b && x >= REAL_T(-1) * b) {
                 return std::exp(x);
@@ -1470,8 +1496,6 @@ namespace ad {
             } else {
                 return std::exp(REAL_T(-1) * b)*(REAL_T(1.) - x - b) / (REAL_T(1.) + REAL_T(2.) * (REAL_T(-1) * x - b));
             }
-            //
-            //            return std::exp(expr_m.GetValue());
         }
 
         inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
@@ -1493,13 +1517,14 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (EXP));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
 
     private:
         const EXPR& expr_m;
+        REAL_T value_m;
     };
 
     template <class REAL_T, class EXPR>
@@ -1532,7 +1557,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (SINH));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1572,7 +1597,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (COSH));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1613,7 +1638,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (TANH));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1653,7 +1678,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (FABS));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1686,7 +1711,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (FLOOR));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -1720,7 +1745,7 @@ namespace ad {
             statements.push_back(Statement<REAL_T > (CEIL));
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        inline void PushIds(IdsSet & ids) const {
             this->expr_m.PushIds(ids);
         }
 
@@ -2040,6 +2065,18 @@ namespace ad {
 
     };
 
+    template<class ForwardIt, class T>
+    bool binary_search(ForwardIt first, ForwardIt last, const T& value) {
+        first = std::lower_bound(first, last, value);
+        return (!(first == last) && !(value < *first));
+    }
+
+    template<class ForwardIt, class T, class Compare>
+    bool binary_search(ForwardIt first, ForwardIt last, const T& value, Compare comp) {
+        first = std::lower_bound(first, last, value, comp);
+        return (!(first == last) && !(comp(value, *first)));
+    }
+
     /**
      * Variable class used for calculations and storage of computed derivatives.
      * 
@@ -2059,8 +2096,8 @@ namespace ad {
      * 
      * 
      */
-    template<class REAL_T>
-    class Variable : public ExpressionBase<REAL_T, Variable<REAL_T> > {
+    template<class REAL_T, int group>
+    class Variable : public ExpressionBase<REAL_T, Variable<REAL_T, group> > {
         REAL_T value_m;
         uint32_t iv_id_m; //id when is a independent variable.
         std::string name_m;
@@ -2080,35 +2117,39 @@ namespace ad {
         static bool is_supporting_arbitrary_order;
 
 
-#ifdef USE_MM_CACHE_MAP
-        typedef mm::cache_map<uint32_t, double> GradientMap;
-        typedef std::set<uint32_t> indepedndent_variables;
-        typedef std::set<uint32_t> ::const_iterator const_indepedndent_variables_iterator;
-        typedef std::set<uint32_t> ::iterator indepedndent_variables_iterator;
-        typedef mm::cache_map<uint32_t, mm::cache_map<uint32_t, double> > MixedPartialsMap;
-        typedef GradientMap::const_iterator const_grads_iterator;
-        typedef GradientMap::iterator grads_iterator;
-        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
-        typedef MixedPartialsMap::iterator partials_iterator;
-#elif defined(USE_TR1_UNORDERED_MAP)
-        typedef std::tr1::unordered_map<uint32_t, double> GradientMap;
-        typedef std::tr1::unordered_map<uint32_t, std::tr1::unordered_map<uint32_t, double> > MixedPartialsMap;
-        typedef GradientMap::const_iterator const_grads_iterator;
-        typedef GradientMap::iterator grads_iterator;
-        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
-        typedef MixedPartialsMap::iterator partials_iterator;
-#elif defined(USE_HASH_TABLE)
-        typedef HashTable GradientMap;
-#else
-        typedef std::map<uint32_t, double> GradientMap;
-        typedef std::map<uint32_t, std::map<uint32_t, double> > MixedPartialsMap;
-        typedef GradientMap::const_iterator const_grads_iterator;
-        typedef GradientMap::iterator grads_iterator;
-        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
-        typedef MixedPartialsMap::iterator partials_iterator;
+        //#ifdef USE_MM_CACHE_MAP
+        //        typedef mm::cache_map<uint32_t, double> GradientMap;
+        //        typedef mm::cache_map<uint32_t, mm::cache_map<uint32_t, double> > MixedPartialsMap;
+        //        typedef GradientMap::const_iterator const_grads_iterator;
+        //        typedef GradientMap::iterator grads_iterator;
+        //        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
+        //        typedef MixedPartialsMap::iterator partials_iterator;
+        //#elif defined(USE_TR1_UNORDERED_MAP)
+        //        typedef std::tr1::unordered_map<uint32_t, double> GradientMap;
+        //        typedef std::tr1::unordered_map<uint32_t, std::tr1::unordered_map<uint32_t, double> > MixedPartialsMap;
+        //        typedef GradientMap::const_iterator const_grads_iterator;
+        //        typedef GradientMap::iterator grads_iterator;
+        //        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
+        //        typedef MixedPartialsMap::iterator partials_iterator;
+        //#elif defined(USE_HASH_TABLE)
+        //        typedef HashTable GradientMap;
+        //#else
+        //        typedef std::map<uint32_t, double> GradientMap;
+        //        typedef std::map<uint32_t, std::map<uint32_t, double> > MixedPartialsMap;
+        //        typedef GradientMap::const_iterator const_grads_iterator;
+        //        typedef GradientMap::iterator grads_iterator;
+        //        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
+        //        typedef MixedPartialsMap::iterator partials_iterator;
+        //
+        //#endif
 
-#endif
-        GradientMap gradients_m;
+        typedef std::vector<std::pair<bool, REAL_T> > GradientVector;
+        GradientVector g;
+        //        GradientMap gradients_m;
+
+        typedef IdsSet indepedndent_variables;
+        typedef IdsSet::iterator indepedndent_variables_iterator;
+        typedef IdsSet::const_iterator const_indepedndent_variables_iterator;
         indepedndent_variables ids_m;
         //        std::vector<bool> has_m;
         typedef std::vector<Statement<REAL_T> > ExpressionStatements;
@@ -2124,7 +2165,7 @@ namespace ad {
 
             iv_min = std::numeric_limits<uint32_t>::max();
             iv_max = std::numeric_limits<uint32_t>::min();
-
+            //this->ids_m.set_empty_key(NULL);
             if (Variable::is_recording_g) {
                 if (Variable::IsSupportingArbitraryOrder()) {
                     this->statements_m.push_back(Statement<REAL_T > (VARIABLE, this->GetValue(), this->GetId()));
@@ -2140,7 +2181,7 @@ namespace ad {
          * @param is_independent
          */
         Variable(const REAL_T& value, bool is_independent = false) : is_independent_m(is_independent), ExpressionBase<REAL_T, Variable<REAL_T> >(0), value_m(value), iv_id_m(0) {
-
+            //this->ids_m.set_empty_key(NULL);
             iv_min = std::numeric_limits<uint32_t>::max();
             iv_max = std::numeric_limits<uint32_t>::min();
             if (is_independent) {
@@ -2166,11 +2207,15 @@ namespace ad {
             value_m = orig.GetValue();
             this->id_m = orig.GetId();
             this->iv_id_m = orig.iv_id_m;
-            orig.PushIds(ids_m);
+            //            orig.PushIds(ids_m);
+            //this->ids_m.set_empty_key(NULL);
+            ids_m.insert(orig.ids_m.begin(), orig.ids_m.end()); // = orig.ids_m;
+            g = orig.g;
+            //            has_m = orig.has_m;
 #if defined(USE_HASH_TABLE)
             this->gradients_m = HashTable(orig.gradients_m);
 #else
-            this->gradients_m.insert(orig.gradients_m.begin(), orig.gradients_m.end());
+            //            this->gradients_m.insert(orig.gradients_m.begin(), orig.gradients_m.end());
 #endif
             this->is_independent_m = orig.is_independent_m;
             this->bounded_m = orig.bounded_m;
@@ -2209,15 +2254,17 @@ namespace ad {
                 //                
                 //            }
 
-
+                //this->ids_m.set_empty_key(NULL);
                 expr.PushIds(ids_m);
                 //expr.GetIdRange(this->iv_min, this->iv_max);
                 indepedndent_variables_iterator it;
-
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = false;
-                    this->gradients_m[*it] = expr.Derivative(*it, found);
+                    this->g[*it].first = true;
+                    this->g[*it].second = expr.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
                 }
                 if (Variable::IsSupportingArbitraryOrder()) {
                     expr.Push(this->statements_m);
@@ -2232,8 +2279,8 @@ namespace ad {
             //            if (this->is_independent_m) {
             //                this->independent_variables_g.erase(this->GetId());
             //            }
-            this->statements_m.clear();
-            this->gradients_m.clear();
+            //            this->statements_m.clear();
+            //            this->gradients_m.clear();
 
 #endif
         }
@@ -2743,6 +2790,7 @@ namespace ad {
         const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
 
+
             if (this->GetId() == id) {
                 found = true;
                 return 1.0;
@@ -2760,20 +2808,48 @@ namespace ad {
 
 #else
 
+                //                if(id < this->g.size()){
+                //                    if(g[id] != 0){
+                //                        found = true;
+                //                    }
+                //                    
+                //                    return g[id];
+                //                }
 
-                //                if (id >= this->iv_min && id <= this->iv_max) {
+                //                std::find(this->ids_m.begin(),this->ids_m.end(),id );
 
-                
-                const_grads_iterator git = this->gradients_m.find(id);
-
-
-                if (git != this->gradients_m.end()) {
-                    found = true;
-                    return git->second;
+                //                if (ad::binary_search(ids_m.begin(), ids_m.end(), id)) {
+                //                    found = true;
+                //                    return g[id];
+                //                } else {
+                //                    return 0.0;
+                //                }
+                //                
+                if (id < g.size()) {
+                    if (g[id].first) {
+                        found = true;
+                        return g[id].second;
+                    } else {
+                        return 0.0;
+                    }
                 } else {
-                    Variable<REAL_T>::misses_g++;
                     return 0.0;
                 }
+                //                if (this->ids_m.find(id) != this->ids_m.end()) {
+                //                    found = true;
+                //                    return g[id].second;
+                //                } else {
+                //                    return 0.0;
+                //                }
+
+                //                 const_grads_iterator git = this->gradients_m.find(id);
+                //                if (git != this->gradients_m.end()) {
+                //                    found = true;
+                //                    return git->second;
+                //                } else {
+                //                    Variable<REAL_T>::misses_g++;
+                //                    return 0.0;
+                //                }
             }
 
 #endif
@@ -2820,7 +2896,7 @@ namespace ad {
             //            }
         }
 
-        void PushIds(std::set<uint32_t> &ids) const {
+        void PushIds(IdsSet &ids) const {
             if (this->GetId() != 0) {
                 //                uint32_t id = uint32_t
                 ids.insert(this->GetId());
@@ -2847,12 +2923,30 @@ namespace ad {
                 return 0.0;
             }
 #else
-            const_grads_iterator git = this->gradients_m.find(ind.GetId());
-            if (git != this->gradients_m.end()) {
-                return git->second;
+
+            if (ind.GetId() < g.size()) {
+                if (g[ind.GetId()].first) {
+
+                    return g[ind.GetId()].second;
+                } else {
+                    return 0.0;
+                }
             } else {
-                return 0;
+                return 0.0;
             }
+            //            if (this->ids_m.find(ind.GetId()) != this->ids_m.end()) {
+            //                //                found = true;
+            //                return g[ind.GetId()].second;
+            //            } else {
+            //                return 0.0;
+            //            }
+
+            //            const_grads_iterator git = this->gradients_m.find(ind.GetId());
+            //            if (git != this->gradients_m.end()) {
+            //                return git->second;
+            //            } else {
+            //                return 0;
+            //            }
 #endif
         }
 
@@ -2873,12 +2967,29 @@ namespace ad {
                 return 0.0;
             }
 #else
-            const_grads_iterator git = this->gradients_m.find(ind.GetId());
-            if (git != this->gradients_m.end()) {
-                return git->second;
+
+            if (ind.GetId() < g.size()) {
+                if (g[ind.GetId()].first) {
+
+                    return g[ind.GetId()].second;
+                } else {
+                    return 0.0;
+                }
             } else {
-                return 0;
+                return 0.0;
             }
+            //            if (this->ids_m.find(ind.GetId()) != this->ids_m.end()) {
+            //                //                found = true;
+            //                return g[ind.GetId()].second;
+            //            } else {
+            //                return 0.0;
+            //            }
+            //            const_grads_iterator git = this->gradients_m.find(ind.GetId());
+            //            if (git != this->gradients_m.end()) {
+            //                return git->second;
+            //            } else {
+            //                return 0;
+            //            }
 #endif
         }
 
@@ -2906,7 +3017,8 @@ namespace ad {
 #if defined(USE_HASH_TABLE)
             this->gradients_m.Clear();
 #else
-            this->gradients_m.clear();
+            //            this->gradients_m.clear();
+            this->g.clear();
             if (Variable::IsRecording()) {
                 if (Variable::is_supporting_arbitrary_order) {
                     this->statements_m.clear();
@@ -2929,7 +3041,8 @@ namespace ad {
             //                        this->id = other.getId();
             //has_m.resize(IDGenerator::instance()->current() + 1);
             value_m = other.GetValue();
-            other.PushIds(ids_m);
+
+
             //            this->gradients.clear();
             if (ad::Variable<REAL_T>::is_recording_g) {
 
@@ -2951,11 +3064,14 @@ namespace ad {
                 // other.GetIdRange(this->iv_min, this->iv_max);
                 //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
                 indepedndent_variables_iterator it;
-
+                other.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = true;
-                    this->gradients_m[*it] = other.Derivative(*it, found);
+                    this->g[*it].first = true;
+                    this->g[*it].second = other.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
                 }
 
 
@@ -3000,15 +3116,19 @@ namespace ad {
                 //                                }
 #endif
 
+//                ids_m.clear();
+//                ids_m.set_empty_key(NULL);
                 expr.PushIds(ids_m);
                 // expr.GetIdRange(this->iv_min, this->iv_max);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 indepedndent_variables_iterator it;
-
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = false;
-                    this->gradients_m[*it] = expr.Derivative(*it, found);
+                    this->g[*it].first = true;
+                    this->g[*it].second = expr.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
                 }
                 //                expr.GetIdRange(this->iv_min, this->iv_max);
                 if (Variable::is_supporting_arbitrary_order) {
@@ -3051,10 +3171,13 @@ namespace ad {
                 //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
                 indepedndent_variables_iterator it;
                 rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = true;
-                    this->gradients_m[*it] = this->gradients_m[*it] + rhs.Derivative(*it, found);
+                    this->g[*it].first = true;
+                    this->g[*it].second = this->g[*it].second + rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
                 }
 
                 if (Variable::is_supporting_arbitrary_order) {
@@ -3087,10 +3210,13 @@ namespace ad {
                 //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
                 indepedndent_variables_iterator it;
                 rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = true;
-                    this->gradients_m[*it] = this->gradients_m[*it] + rhs.Derivative(*it, found);
+                    this->g[*it].first = true;
+                    this->g[*it].second = this->g[*it].second + rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
                 }
 
                 if (Variable::is_supporting_arbitrary_order) {
@@ -3148,10 +3274,12 @@ namespace ad {
                 //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
                 indepedndent_variables_iterator it;
                 rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = true;
-                    this->gradients_m[*it] = this->gradients_m[*it] - rhs.Derivative(*it, found);
+                    this->g[*it] = this->g[*it] - rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
                 }
                 if (Variable::is_supporting_arbitrary_order) {
                     rhs.Push(this->statements_m);
@@ -3211,10 +3339,12 @@ namespace ad {
                 //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
                 indepedndent_variables_iterator it;
                 rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = true;
-                    this->gradients_m[*it] = this->gradients_m[*it] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
+                    this->g[*it] = this->g[*it] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
                 }
 
                 if (Variable::is_supporting_arbitrary_order) {
@@ -3274,11 +3404,12 @@ namespace ad {
                 //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
                 indepedndent_variables_iterator it;
                 rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
                 //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
                 for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
                     bool found = true;
-                    this->gradients_m[*it] = (this->gradients_m[*it] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
-                    //                   
+                    this->g[*it] = (this->g[*it] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
+                    //                    this->gradients_m[*it] = g[*it];
                 }
                 if (Variable::is_supporting_arbitrary_order) {
                     rhs.Push(this->statements_m);
@@ -3341,14 +3472,14 @@ namespace ad {
     //    template<class REAL_T>
     //    std::set<uint32_t> Variable<REAL_T>::independent_variables_g;
 
-    template<class REAL_T>
-    uint32_t Variable<REAL_T>::misses_g = 0;
+    template<class REAL_T, int group>
+    uint32_t Variable<REAL_T, group>::misses_g = 0;
 
-    template<class REAL_T>
-    bool Variable<REAL_T>::is_recording_g = true;
+    template<class REAL_T, int group>
+    bool Variable<REAL_T, group>::is_recording_g = true;
 
-    template<class REAL_T>
-    bool Variable<REAL_T>::is_supporting_arbitrary_order = false;
+    template<class REAL_T, int group>
+    bool Variable<REAL_T, group>::is_supporting_arbitrary_order = false;
 
     template<class REAL_T>
     class Var : public ExpressionBase<REAL_T, Var<REAL_T> > {

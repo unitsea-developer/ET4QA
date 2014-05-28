@@ -58,8 +58,8 @@ public:
 
 
     void Initialize() {
-         StreamedDataFile<T> input_file;
-        input_file_path = "/Users/matthewsupernaw/NetBeansProjects/ET4AD/catage.dat__";
+         StreamedDataFile<double> input_file;
+        input_file_path = "/Users/matthewsupernaw/NetBeansProjects/ET4AD/catage.dat___";
         input_file.Parse(input_file_path);
 
         this->nyrs = static_cast<int> (input_file.Next());
@@ -147,7 +147,7 @@ public:
         for (int i = 1; i < nages; i++) {
             relwt[i] = w;
             w++;
-            relwt[i] = std::pow(relwt[i], (T) .5);
+            relwt[i] = std::sqrt(relwt[i]);//std::pow(relwt[i], (T) .5);
             if (relwt[i] > maxw) {
                 maxw = relwt[i];
             }
@@ -306,7 +306,7 @@ public:
 
     template<class TT>
     const TT norm2(std::vector<TT> &vect) {
-        TT ret = 0.0;
+        TT ret = TT(0.0);
         for (int i = 0; i < vect.size(); i++) {
             ret = ret+ vect[i] * vect[i];
         }
@@ -361,12 +361,13 @@ public:
                     << "\t" << gradient[i] << "\n";
         }
 
-        //        std::valarray<std::valarray<double> > hessian = this->EstimatedHessian();
+//                std::valarray<std::valarray<double> > hessian = this->EstimatedHessian();
 
 
 
     }
-
+    
+    
 
 
 private:

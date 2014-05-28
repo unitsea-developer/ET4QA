@@ -25,6 +25,7 @@
                    kind="IMPORTANT_FILES_FOLDER">
       <itemPath>Makefile</itemPath>
     </logicalFolder>
+    <itemPath>BigFloat.hpp</itemPath>
     <itemPath>CatchAtAge.hpp</itemPath>
     <itemPath>ET4AD.hpp</itemPath>
     <itemPath>ET4AD2.hpp</itemPath>
@@ -42,6 +43,11 @@
         <compilerSet>default</compilerSet>
       </toolsSet>
       <compileType>
+        <ccTool>
+          <incDir>
+            <pElem>support/sparsehash-2.0.2/src</pElem>
+          </incDir>
+        </ccTool>
       </compileType>
     </conf>
     <conf name="Release" type="1">
@@ -57,6 +63,7 @@
           <developmentMode>6</developmentMode>
           <incDir>
             <pElem>../../../Downloads/admb/build/dist/include</pElem>
+            <pElem>support/sparsehash-2.0.2/src</pElem>
           </incDir>
           <commandLine>-lgsl -lcblas -NDEBUG -DOPT_LIB -Wall -DUSE_LAPLACE -D__SPDLL__ -D__GNUDOS__ -Dlinux</commandLine>
         </ccTool>

@@ -1,0 +1,153 @@
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /opt/local/bin/c++ 
+Build flags: 
+Id flags: 
+
+The output was:
+4
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /opt/local/bin/c++ 
+Build flags: 
+Id flags: -c
+
+The output was:
+4
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+
+
+Determining if the CXX compiler works failed with the following output:
+Change Dir: /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp
+
+Run Build Command:/usr/bin/make "cmTryCompileExec3034486936/fast"
+/usr/bin/make -f CMakeFiles/cmTryCompileExec3034486936.dir/build.make CMakeFiles/cmTryCompileExec3034486936.dir/build
+"/Applications/CMake 2.8-8.app/Contents/bin/cmake" -E cmake_progress_report /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp/CMakeFiles 1
+Building CXX object CMakeFiles/cmTryCompileExec3034486936.dir/testCXXCompiler.cxx.o
+/opt/local/bin/c++     -o CMakeFiles/cmTryCompileExec3034486936.dir/testCXXCompiler.cxx.o -c /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp/testCXXCompiler.cxx
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+make[1]: *** [CMakeFiles/cmTryCompileExec3034486936.dir/testCXXCompiler.cxx.o] Error 4
+make: *** [cmTryCompileExec3034486936/fast] Error 2
+
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /opt/local/bin/c++ 
+Build flags: 
+Id flags: 
+
+The output was:
+4
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /opt/local/bin/c++ 
+Build flags: 
+Id flags: -c
+
+The output was:
+4
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+
+
+Determining if the CXX compiler works failed with the following output:
+Change Dir: /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp
+
+Run Build Command:/usr/bin/make "cmTryCompileExec374481661/fast"
+/usr/bin/make -f CMakeFiles/cmTryCompileExec374481661.dir/build.make CMakeFiles/cmTryCompileExec374481661.dir/build
+"/Applications/CMake 2.8-8.app/Contents/bin/cmake" -E cmake_progress_report /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp/CMakeFiles 1
+Building CXX object CMakeFiles/cmTryCompileExec374481661.dir/testCXXCompiler.cxx.o
+/opt/local/bin/c++     -o CMakeFiles/cmTryCompileExec374481661.dir/testCXXCompiler.cxx.o -c /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp/testCXXCompiler.cxx
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+make[1]: *** [CMakeFiles/cmTryCompileExec374481661.dir/testCXXCompiler.cxx.o] Error 4
+make: *** [cmTryCompileExec374481661/fast] Error 2
+
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /opt/local/bin/c++ 
+Build flags: 
+Id flags: 
+
+The output was:
+4
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /opt/local/bin/c++ 
+Build flags: 
+Id flags: -c
+
+The output was:
+4
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+
+
+Determining if the CXX compiler works failed with the following output:
+Change Dir: /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp
+
+Run Build Command:/usr/bin/make "cmTryCompileExec1317925754/fast"
+/usr/bin/make -f CMakeFiles/cmTryCompileExec1317925754.dir/build.make CMakeFiles/cmTryCompileExec1317925754.dir/build
+"/Applications/CMake 2.8-8.app/Contents/bin/cmake" -E cmake_progress_report /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp/CMakeFiles 1
+Building CXX object CMakeFiles/cmTryCompileExec1317925754.dir/testCXXCompiler.cxx.o
+/opt/local/bin/c++     -o CMakeFiles/cmTryCompileExec1317925754.dir/testCXXCompiler.cxx.o -c /Users/matthewsupernaw/NetBeansProjects/ET4QA/ET4QA2/support/EASTL-community/mybuild/CMakeFiles/CMakeTmp/testCXXCompiler.cxx
+dyld: Library not loaded: /opt/local/lib/libcloog-isl.3.dylib
+  Referenced from: /opt/local/libexec/gcc/x86_64-apple-darwin11/4.7.2/cc1plus
+  Reason: image not found
+c++: internal compiler error: Trace/BPT trap: 5 (program cc1plus)
+Please submit a full bug report,
+with preprocessed source if appropriate.
+See <https://trac.macports.org/newticket> for instructions.
+make[1]: *** [CMakeFiles/cmTryCompileExec1317925754.dir/testCXXCompiler.cxx.o] Error 4
+make: *** [cmTryCompileExec1317925754/fast] Error 2
+
+
