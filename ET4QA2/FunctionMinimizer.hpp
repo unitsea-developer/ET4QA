@@ -189,9 +189,8 @@ namespace ad {
 
         bool verbose_m;
         unsigned int iprint_m;
-        size_t max_history_m;
-
         T max_c;
+        size_t max_history_m;  
         int unrecorded_calls_m;
 
     public:
@@ -200,15 +199,15 @@ namespace ad {
          * Default constructor.
          */
         FunctionMinimizer()
-        : tolerance_m(T(1e-4)),
+        : minimizer_type_m(DUBOUT_LBFGS),
+        tolerance_m(T(1e-4)),
         max_iterations_m(1000),
         is_constrained_m(false),
         verbose_m(true),
         iprint_m(10),
+        max_c(std::numeric_limits<T>::min()),
         max_history_m(1000),
-        unrecorded_calls_m(0),
-        minimizer_type_m(DUBOUT_LBFGS),
-        max_c(std::numeric_limits<T>::min()) {
+        unrecorded_calls_m(0) {
 
         }
 
@@ -1384,9 +1383,9 @@ namespace ad {
                     }
                 }
 
-//                if (this->verbose_m && ((this->iteration_m % this->iprint_m) == 0)) {
-//                    this->Print(fx, gradient, parameters, "Verbose:\nMethod: ADMB");
-//                }
+                //                if (this->verbose_m && ((this->iteration_m % this->iprint_m) == 0)) {
+                //                    this->Print(fx, gradient, parameters, "Verbose:\nMethod: ADMB");
+                //                }
 
                 //                iteration++;
             }

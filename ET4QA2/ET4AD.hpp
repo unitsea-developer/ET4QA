@@ -88,10 +88,18 @@
 //typedef google::dense_hash_set<uint32_t> IdsSet;
 typedef boost::unordered_set<uint32_t> IdsSet;
 
+
+
 #include "BigFloat.hpp"
 
 namespace ad {
 
+    /**
+     * Operation values used for recording expressions into a post-order 
+     * expression tree. These operations are used primarily for supporting 
+     * operations such as arbitray order derivatives,uncertainty calculations
+     * and expression string building.
+     */
     enum Operation {
         MINUS = 0,
         PLUS,
@@ -103,13 +111,13 @@ namespace ad {
         ASIN,
         ACOS,
         ATAN,
-        ATAN2, //atan(adnumber,adnumber)
-        ATAN3, //atan(T,adnumber)
-        ATAN4, //atan(adnumber,T)
+        ATAN2,
+        ATAN3,
+        ATAN4,
         SQRT,
-        POW, //pow(adnumber,adnumber)
-        POW1, //pow(T,adnumber)
-        POW2, //pow(adnumber,T)
+        POW,
+        POW1,
+        POW2,
         LOG,
         LOG10,
         EXP,
@@ -136,11 +144,15 @@ namespace ad {
     class Statement {
     public:
 
-        Statement(const Operation &op) : op_m(op) {
+        Statement() : op_m(CONSTANT), value_m(0), id_m(0) {
 
         }
 
-        Statement(const Operation &op, const REAL_T &value) : op_m(op), value_m(value) {
+        Statement(const Operation &op) : op_m(op), value_m(0), id_m(0) {
+
+        }
+
+        Statement(const Operation &op, const REAL_T &value) : op_m(op), value_m(value), id_m(0) {
 
         }
 
@@ -151,6 +163,136 @@ namespace ad {
         Operation op_m;
         REAL_T value_m;
         uint32_t id_m;
+
+    };
+
+    /**
+     * Interface class for storing variable information. The point of this class 
+     * is to provide flexibility of the storage for the variables information. 
+     * For instance, it may be desired to store the data in a database or on 
+     * the disk rather than in random access memory. 
+     */
+    template<class REAL_T>
+    class VariableStorage {
+        template<class REAL_TT, int> friend class Variable;
+        uint32_t id_m;
+    public:
+
+        VariableStorage() : id_m(0) {
+
+        }
+
+        virtual ~VariableStorage() {
+
+        }
+
+        uint32_t GetId() const {
+            return id_m;
+        }
+
+        void SetId(uint32_t id) {
+            this->id_m = id;
+        }
+
+
+
+
+        /**
+         * Abstract function to set the value for this storage object.
+         * 
+         * @param value
+         */
+        virtual void SetValue(const REAL_T &value) = 0;
+
+        /**
+         * Abstract function to get the value for this storage object.
+         * 
+         * @return 
+         */
+        virtual const REAL_T GetValue() = 0;
+
+        /**
+         * Abstract function to return a derivative value for the independent 
+         * variable with id.
+         * 
+         * @param id
+         * @return 
+         */
+        virtual const std::pair<bool, REAL_T> GetDerivative(const uint32_t &id) = 0;
+
+        /**
+         * Abstract function to set the derivative value with respect to 
+         * independent variable with id.
+         * 
+         * @param id
+         * @param value
+         * @return 
+         */
+        virtual void SetDerivative(const std::pair<bool, REAL_T> &entry, const uint32_t &id) = 0;
+
+        /**
+         * Abstract function to add a independent variable id to 
+         * this storage set.
+         * 
+         * @param id
+         * @return 
+         */
+        virtual void AddId(const uint32_t &id) = 0;
+
+        /**
+         * Abstract function to merge add id's from another VariableStorage 
+         * to this one.
+         * 
+         * @param id
+         * @return 
+         */
+        virtual void Merge(VariableStorage<REAL_T>* other) = 0;
+
+        /**
+         * Abstract function to return the size of the derivative info list. 
+         * These are the computed intermediately stored derivatives. 
+         * 
+         */
+        virtual const uint32_t DerivativeInfoSize() = 0;
+
+        /**
+         * Abstract function to clear the derivative info for this storage.
+         * 
+         * @return 
+         */
+        virtual const void ClearDerivativeInfo() = 0;
+
+        /**
+         * Abstract function to add a expression statement to the statement list. 
+         * Statements are the recorded nodes in the expressions computational graph
+         * and are stored in post-order(Post-order expression tree).
+         * @param statement
+         */
+        virtual void AddStatement(const Statement<REAL_T> &statement) = 0;
+
+        /**
+         * Abstract function to return the size of the statement list size.
+         * @return 
+         */
+        virtual const uint32_t ExpressionSize() = 0;
+
+        /**
+         * Abstract function to retrieve a Statement object at a given index.
+         * 
+         * @param index
+         * @return 
+         */
+        virtual Statement<REAL_T> StatementAt(const uint32_t &index) = 0;
+
+        /**
+         * Abstract function to clear the statement list.
+         */
+        virtual void ClearExpression() = 0;
+
+        /**
+         * Rests this storage.
+         */
+        virtual void Reset() = 0;
 
     };
 
@@ -192,6 +334,9 @@ namespace ad {
     template<class REAL_T, int group = 0 >
     class Variable;
 
+    /**
+     * Base class for expression types.
+     */
     template<class REAL_T, class A>
     struct ExpressionBase {
     public:
@@ -228,15 +373,23 @@ namespace ad {
          * @param found
          * @return 
          */
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
-            return Cast().Derivative(id, found, index);
+        const REAL_T Derivative(const uint32_t &id, bool &found) const {
+            return Cast().Derivative(id, found);
         }
 
         void Push(std::vector<Statement<REAL_T> > &statements) const {
             Cast().Push(statements);
         }
 
-        inline void PushIds(IdsSet & ids) const {
+        void PushIds(IdsSet & ids) const {
+            Cast().PushIds(ids);
+        }
+
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            Cast().PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > &ids) const {
             Cast().PushIds(ids);
         }
 
@@ -250,10 +403,15 @@ namespace ad {
         };
     };
 
+    /**
+     * Expression template for constant values.
+     * 
+     * @param value
+     */
     template<class REAL_T>
-    struct Literal : public ExpressionBase<REAL_T, Literal<REAL_T> > {
+    struct Constant : public ExpressionBase<REAL_T, Constant<REAL_T> > {
 
-        Literal(const REAL_T & value) : value_m(value) {
+        Constant(const REAL_T & value) : value_m(value) {
 
         }
 
@@ -262,7 +420,7 @@ namespace ad {
 
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return 0;
         };
 
@@ -271,6 +429,14 @@ namespace ad {
         }
 
         inline void PushIds(IdsSet & ids) const {
+
+        }
+
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
 
         }
 
@@ -283,6 +449,13 @@ namespace ad {
 
     };
 
+    /**
+     * 
+     * Expression template for addition.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS, class RHS>
     struct Add : public ExpressionBase<REAL_T, Add<REAL_T, LHS, RHS> > {
 
@@ -296,7 +469,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return lhs_m.Derivative(id, found) + rhs_m.Derivative(id, found);
         }
 
@@ -316,6 +489,17 @@ namespace ad {
             this->rhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->lhs_m.PushStorage(ids);
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+            this->rhs_m.PushIds(ids);
+        }
+
+
 
 
     private:
@@ -325,6 +509,12 @@ namespace ad {
         const REAL_T value_m;
     };
 
+    /**
+     * Operator for addition of two expression templates.
+     * @param a
+     * @param b
+     * @return 
+     */
     template <class REAL_T, class LHS, class RHS>
     inline
     Add<REAL_T, LHS, RHS> operator+(const ExpressionBase<REAL_T, LHS>& a,
@@ -332,6 +522,12 @@ namespace ad {
         return Add<REAL_T, LHS, RHS > (a.Cast(), b.Cast());
     }
 
+    /**
+     * Expression template for subtraction.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS, class RHS>
     struct Minus : public ExpressionBase<REAL_T, Minus<REAL_T, LHS, RHS> > {
 
@@ -343,7 +539,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return lhs_m.Derivative(id, found) - rhs_m.Derivative(id, found);
         }
 
@@ -363,6 +559,16 @@ namespace ad {
             this->rhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->lhs_m.PushStorage(ids);
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+            this->rhs_m.PushIds(ids);
+        }
+
 
     protected:
 
@@ -374,6 +580,13 @@ namespace ad {
         const REAL_T value_m;
     };
 
+    /**
+     * Operator for expression template subtraction.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class LHS, class RHS>
     inline const
     Minus<REAL_T, LHS, RHS> operator-(const ExpressionBase<REAL_T, LHS>& lhs,
@@ -381,6 +594,12 @@ namespace ad {
         return Minus<REAL_T, LHS, RHS > (lhs.Cast(), rhs.Cast());
     }
 
+    /**
+     * Expression template for multiplying two expression templates.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS, class RHS>
     struct Multiply : public ExpressionBase<REAL_T, Multiply<REAL_T, LHS, RHS> > {
 
@@ -392,7 +611,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             //            std::cout << "* " << a_.Derivative(id, found) << "*" << b_ << " +" <<a_ << " * " <<  b_.Derivative(id, found) << " \n";
             return lhs_m.Derivative(id, found) * rhs_m.GetValue() + lhs_m.GetValue() * rhs_m.Derivative(id, found);
         }
@@ -413,6 +632,16 @@ namespace ad {
             this->rhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->lhs_m.PushStorage(ids);
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+            this->rhs_m.PushIds(ids);
+        }
+
 
 
     private:
@@ -422,6 +651,13 @@ namespace ad {
         const REAL_T value_m;
     };
 
+    /**
+     * Operator for expression template multiplication.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class LHS, class RHS>
     inline const
     Multiply<REAL_T, LHS, RHS> operator*(const ExpressionBase<REAL_T, LHS>& lhs,
@@ -429,6 +665,12 @@ namespace ad {
         return Multiply<REAL_T, LHS, RHS > (lhs.Cast(), rhs.Cast());
     }
 
+    /**
+     * Expression template for division.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS, class RHS>
     struct Divide : public ExpressionBase<REAL_T, Divide<REAL_T, LHS, RHS> > {
 
@@ -440,7 +682,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return (lhs_m.Derivative(id, found) * rhs_m.GetValue() - lhs_m.GetValue() * rhs_m.Derivative(id, found)) / (rhs_m.GetValue() * rhs_m.GetValue());
         }
 
@@ -460,6 +702,17 @@ namespace ad {
             this->rhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->lhs_m.PushStorage(ids);
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+            this->rhs_m.PushIds(ids);
+        }
+
+
     private:
 
         const LHS& lhs_m;
@@ -467,6 +720,13 @@ namespace ad {
         const REAL_T value_m;
     };
 
+    /**
+     * Operator for expression template division.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class LHS, class RHS>
     inline const
     Divide<REAL_T, LHS, RHS> operator/(const ExpressionBase<REAL_T, LHS>& lhs,
@@ -474,10 +734,16 @@ namespace ad {
         return Divide<REAL_T, LHS, RHS > (lhs.Cast(), rhs.Cast());
     }
 
+    /**
+     * Expression template for adding a constant to a expression template.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS>
-    struct LiteralAdd : public ExpressionBase<REAL_T, LiteralAdd<REAL_T, LHS> > {
+    struct ConstantAdd : public ExpressionBase<REAL_T, ConstantAdd<REAL_T, LHS> > {
 
-        LiteralAdd(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
+        ConstantAdd(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
         : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() + rhs) {
         }
 
@@ -486,7 +752,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return lhs_m.Derivative(id, found);
         }
 
@@ -504,6 +770,14 @@ namespace ad {
             this->lhs_m.PushIds(ids);
         }
 
+        inline inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->lhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+        }
+
 
 
     private:
@@ -512,24 +786,37 @@ namespace ad {
         REAL_T value_m;
     };
 
+    /**
+     * Operator for adding a constant value to a expression templates.
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class LHS>
     inline const
-    LiteralAdd<REAL_T, LHS> operator+(const ExpressionBase<REAL_T, LHS>& lhs,
+    ConstantAdd<REAL_T, LHS> operator+(const ExpressionBase<REAL_T, LHS>& lhs,
     const REAL_T& rhs) {
-        return LiteralAdd<REAL_T, LHS > (lhs.Cast(), rhs);
+        return ConstantAdd<REAL_T, LHS > (lhs.Cast(), rhs);
     }
 
     template <class REAL_T, class RHS>
     inline const
-    LiteralAdd<REAL_T, RHS> operator+(const REAL_T& lhs,
+    ConstantAdd<REAL_T, RHS> operator+(const REAL_T& lhs,
     const ExpressionBase<REAL_T, RHS>& rhs) {
-        return LiteralAdd<REAL_T, RHS > (rhs.Cast(), lhs);
+        return ConstantAdd<REAL_T, RHS > (rhs.Cast(), lhs);
     }
 
+    /**
+     * Expression template for subtracting a constant from a expression 
+     * template.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS>
-    struct LiteralMinus : public ExpressionBase<REAL_T, LiteralMinus<REAL_T, LHS> > {
+    struct ConstantMinus : public ExpressionBase<REAL_T, ConstantMinus<REAL_T, LHS> > {
 
-        LiteralMinus(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
+        ConstantMinus(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
         : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() - rhs_m) {
         }
 
@@ -537,7 +824,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return lhs_m.Derivative(id, found);
         }
 
@@ -555,6 +842,15 @@ namespace ad {
             this->lhs_m.PushIds(ids);
         }
 
+        inline inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+        }
+
+
 
 
     private:
@@ -563,10 +859,17 @@ namespace ad {
         REAL_T value_m;
     };
 
+    /**
+     * Expression template for subtracting a expression template from a 
+     * constant.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class RHS>
-    struct MinusLiteral : public ExpressionBase<REAL_T, MinusLiteral<REAL_T, RHS> > {
+    struct MinusConstant : public ExpressionBase<REAL_T, MinusConstant<REAL_T, RHS> > {
 
-        MinusLiteral(const REAL_T & lhs, const ExpressionBase<REAL_T, RHS>& rhs)
+        MinusConstant(const REAL_T & lhs, const ExpressionBase<REAL_T, RHS>& rhs)
         : rhs_m(rhs.Cast()), lhs_m(lhs), value_m(lhs_m - rhs_m.GetValue()) {
         }
 
@@ -574,7 +877,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return -1.0 * rhs_m.Derivative(id, found);
         }
 
@@ -592,6 +895,15 @@ namespace ad {
             this->rhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->rhs_m.PushIds(ids);
+        }
+
+
     private:
         const RHS& rhs_m;
         const REAL_T lhs_m;
@@ -599,24 +911,42 @@ namespace ad {
 
     };
 
+    /**
+     * Operator for subtracting a constant from a expression template.
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class LHS>
     inline const
-    LiteralMinus<REAL_T, LHS> operator-(const ExpressionBase<REAL_T, LHS>& lhs,
+    ConstantMinus<REAL_T, LHS> operator-(const ExpressionBase<REAL_T, LHS>& lhs,
     const REAL_T& rhs) {
-        return LiteralMinus<REAL_T, LHS > (lhs.Cast(), rhs);
+        return ConstantMinus<REAL_T, LHS > (lhs.Cast(), rhs);
     }
 
+    /**
+     * Operator for subtracting a expression template from a constant.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class RHS>
     inline const
-    MinusLiteral<REAL_T, RHS> operator-(const REAL_T& lhs,
+    MinusConstant<REAL_T, RHS> operator-(const REAL_T& lhs,
     const ExpressionBase<REAL_T, RHS>& rhs) {
-        return MinusLiteral<REAL_T, RHS > (lhs, rhs.Cast());
+        return MinusConstant<REAL_T, RHS > (lhs, rhs.Cast());
     }
 
+    /**
+     * Expression template for multiplying a constant by a expression template.
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS>
-    struct LiteralTimes : public ExpressionBase<REAL_T, LiteralTimes<REAL_T, LHS> > {
+    struct ConstantTimes : public ExpressionBase<REAL_T, ConstantTimes<REAL_T, LHS> > {
 
-        LiteralTimes(const REAL_T & lhs, const ExpressionBase<REAL_T, LHS>& rhs)
+        ConstantTimes(const REAL_T & lhs, const ExpressionBase<REAL_T, LHS>& rhs)
         : lhs_m(lhs), rhs_m(rhs.Cast()), value_m(lhs_m * rhs_m.GetValue()) {
         }
 
@@ -624,7 +954,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return rhs_m.Derivative(id, found) * lhs_m;
         }
 
@@ -642,18 +972,31 @@ namespace ad {
             this->rhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->rhs_m.PushIds(ids);
+        }
+
 
 
     private:
-        const LHS& rhs_m;
         const REAL_T lhs_m;
+        const LHS& rhs_m;
         const REAL_T value_m;
     };
 
+    /**
+     * Expression template for multiplying a expression template by a constant.
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS>
-    struct TimesLiteral : public ExpressionBase<REAL_T, TimesLiteral<REAL_T, LHS> > {
+    struct TimesConstant : public ExpressionBase<REAL_T, TimesConstant<REAL_T, LHS> > {
 
-        TimesLiteral(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
+        TimesConstant(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
         : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() * rhs_m) {
         }
 
@@ -661,7 +1004,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return rhs_m * lhs_m.Derivative(id, found);
         }
 
@@ -679,6 +1022,14 @@ namespace ad {
             this->lhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->lhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+        }
+
 
     private:
         const LHS& lhs_m;
@@ -686,24 +1037,44 @@ namespace ad {
         const REAL_T value_m;
     };
 
+    /**
+     * Operator for multiplying a expression template by a constant.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class LHS>
     inline const
-    TimesLiteral<REAL_T, LHS> operator*(const ExpressionBase<REAL_T, LHS>& lhs,
+    TimesConstant<REAL_T, LHS> operator*(const ExpressionBase<REAL_T, LHS>& lhs,
     const REAL_T& rhs) {
-        return TimesLiteral<REAL_T, LHS > (lhs.Cast(), rhs);
+        return TimesConstant<REAL_T, LHS > (lhs.Cast(), rhs);
     }
 
+    /**
+     * Operator for multiplying a constant by a expression template.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class RHS>
     inline const
-    LiteralTimes<REAL_T, RHS> operator*(const REAL_T& lhs,
+    ConstantTimes<REAL_T, RHS> operator*(const REAL_T& lhs,
     const ExpressionBase<REAL_T, RHS>& rhs) {
-        return LiteralTimes<REAL_T, RHS > (lhs, rhs.Cast());
+        return ConstantTimes<REAL_T, RHS > (lhs, rhs.Cast());
     }
 
+    /**
+     * Expression template for dividing a constant by a expression template.
+     * 
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class RHS>
-    struct LiteralDivide : public ExpressionBase<REAL_T, LiteralDivide<REAL_T, RHS> > {
+    struct ConstantDivide : public ExpressionBase<REAL_T, ConstantDivide<REAL_T, RHS> > {
 
-        LiteralDivide(const REAL_T & lhs, const ExpressionBase<REAL_T, RHS>& rhs)
+        ConstantDivide(const REAL_T & lhs, const ExpressionBase<REAL_T, RHS>& rhs)
         : rhs_m(rhs.Cast()), lhs_m(lhs), value_m(lhs_m / rhs_m.GetValue()) {
         }
 
@@ -711,7 +1082,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return ( -rhs_m.Derivative(id, found) * lhs_m) / (rhs_m.GetValue() * rhs_m.GetValue());
         }
 
@@ -729,6 +1100,15 @@ namespace ad {
             this->rhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->rhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->rhs_m.PushIds(ids);
+        }
+
+
 
     private:
         const RHS& rhs_m;
@@ -736,10 +1116,15 @@ namespace ad {
         REAL_T value_m;
     };
 
+    /**
+     * Expression template for dividing a expression template by a constant.
+     * @param lhs
+     * @param rhs
+     */
     template <class REAL_T, class LHS>
-    struct DivideLiteral : public ExpressionBase<REAL_T, DivideLiteral<REAL_T, LHS> > {
+    struct DivideConstant : public ExpressionBase<REAL_T, DivideConstant<REAL_T, LHS> > {
 
-        DivideLiteral(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
+        DivideConstant(const ExpressionBase<REAL_T, LHS>& lhs, const REAL_T & rhs)
         : lhs_m(lhs.Cast()), rhs_m(rhs), value_m(lhs_m.GetValue() / rhs_m) {
         }
 
@@ -747,7 +1132,7 @@ namespace ad {
             return value_m;
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return (lhs_m.Derivative(id, found) * rhs_m) / (rhs_m * rhs_m);
         }
 
@@ -765,26 +1150,54 @@ namespace ad {
             this->lhs_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->lhs_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->lhs_m.PushIds(ids);
+        }
+
+
     private:
         const LHS& lhs_m;
         REAL_T rhs_m;
         REAL_T value_m;
     };
 
+    /**
+     * Operator for dividing a expression template by a constant.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class LHS>
     inline const
-    DivideLiteral<REAL_T, LHS> operator/(const ExpressionBase<REAL_T, LHS>& lhs,
+    DivideConstant<REAL_T, LHS> operator/(const ExpressionBase<REAL_T, LHS>& lhs,
     const REAL_T& rhs) {
-        return DivideLiteral<REAL_T, LHS > (lhs.Cast(), rhs);
+        return DivideConstant<REAL_T, LHS > (lhs.Cast(), rhs);
     }
 
+    /**
+     * Operator for dividing a constant by a expression template.
+     * 
+     * @param lhs
+     * @param rhs
+     * @return 
+     */
     template <class REAL_T, class RHS>
     inline const
-    LiteralDivide<REAL_T, RHS> operator/(const REAL_T& lhs,
+    ConstantDivide<REAL_T, RHS> operator/(const REAL_T& lhs,
     const ExpressionBase<REAL_T, RHS>& rhs) {
-        return LiteralDivide<REAL_T, RHS > (lhs, rhs.Cast());
+        return ConstantDivide<REAL_T, RHS > (lhs, rhs.Cast());
     }
 
+    /**
+     * Expression template for taking the sine of an expression.
+     * 
+     * @param a
+     */
     template <class REAL_T, class EXPR>
     struct Sin : public ExpressionBase<REAL_T, Sin<REAL_T, EXPR> > {
 
@@ -796,7 +1209,7 @@ namespace ad {
             return std::sin(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -819,11 +1232,25 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
+
+
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for taking the cosine of an expression.
+     * 
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Cos : public ExpressionBase<REAL_T, Cos<REAL_T, EXPR> > {
 
@@ -835,7 +1262,7 @@ namespace ad {
             return std::cos(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -858,6 +1285,13 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
 
@@ -865,6 +1299,11 @@ namespace ad {
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for computing the tangent of a expression template.
+     * 
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Tan : public ExpressionBase<REAL_T, Tan<REAL_T, EXPR> > {
 
@@ -876,7 +1315,7 @@ namespace ad {
             return std::tan(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -900,13 +1339,25 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
 
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for computing the inverse Sine of an expression 
+     * template.
+     * 
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct ASin : public ExpressionBase<REAL_T, ASin<REAL_T, EXPR> > {
 
@@ -918,7 +1369,7 @@ namespace ad {
             return std::asin(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -942,7 +1393,13 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
 
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
 
@@ -950,6 +1407,12 @@ namespace ad {
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for computing the inverse cosine of an expression
+     * template.
+     * 
+     * @param a
+     */
     template <class REAL_T, class EXPR>
     struct ACos : public ExpressionBase<REAL_T, ACos<REAL_T, EXPR> > {
 
@@ -961,7 +1424,7 @@ namespace ad {
             return std::acos(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -985,6 +1448,13 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
 
@@ -992,6 +1462,11 @@ namespace ad {
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for computing the inverse tangent of an expression 
+     * template.
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct ATan : public ExpressionBase<REAL_T, ATan<REAL_T, EXPR> > {
 
@@ -1003,7 +1478,7 @@ namespace ad {
             return std::atan(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1027,14 +1502,24 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
 
-
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for computing the two argument inverse tangent,
+     * where both arguments are expression templates. 
+     * 
+     */
     template <class REAL_T, class EXPR1, class EXPR2>
     struct ATan2 : public ExpressionBase<REAL_T, ATan2<REAL_T, EXPR1, EXPR2> > {
 
@@ -1046,7 +1531,7 @@ namespace ad {
             return std::atan2(expr1_m.GetValue(), expr2_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             REAL_T dx = expr1_m.Derivative(id, found);
 
             if (found) {
@@ -1071,11 +1556,19 @@ namespace ad {
         }
 
         inline void PushIds(IdsSet & ids) const {
-            this->expr2_m.PushIds(ids);
+            this->expr1_m.PushIds(ids);
             this->expr2_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr1_m.PushStorage(ids);
+            this->expr2_m.PushStorage(ids);
+        }
 
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr1_m.PushIds(ids);
+            this->expr2_m.PushIds(ids);
+        }
 
 
     private:
@@ -1084,10 +1577,15 @@ namespace ad {
         const EXPR2& expr2_m;
     };
 
+    /**
+     *Expression template for computing the two argument inverse tangent, where
+     * the second argument is a constant. 
+     * 
+     */
     template <class REAL_T, class EXPR1>
-    struct ATan2Literal : public ExpressionBase<REAL_T, ATan2Literal<REAL_T, EXPR1> > {
+    struct ATan2Constant : public ExpressionBase<REAL_T, ATan2Constant<REAL_T, EXPR1> > {
 
-        ATan2Literal(const ExpressionBase<REAL_T, EXPR1>& expr1, const REAL_T & expr2)
+        ATan2Constant(const ExpressionBase<REAL_T, EXPR1>& expr1, const REAL_T & expr2)
         : expr1_m(expr1.Cast()), expr2_m(expr2) {
         }
 
@@ -1095,7 +1593,7 @@ namespace ad {
             return std::atan2(expr1_m.GetValue(), expr2_m);
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             REAL_T dx = expr1_m.Derivative(id, found);
 
             if (found) {
@@ -1122,7 +1620,13 @@ namespace ad {
             this->expr1_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr1_m.PushStorage(ids);
+        }
 
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr1_m.PushIds(ids);
+        }
 
 
     private:
@@ -1131,10 +1635,15 @@ namespace ad {
         const REAL_T& expr2_m;
     };
 
+    /**
+     *Expression template for computing the two argument inverse tangent,
+     * where the first argument is a constant. 
+     * 
+     */
     template <class REAL_T, class EXPR2>
-    struct LiteralATan2 : public ExpressionBase<REAL_T, LiteralATan2<REAL_T, EXPR2> > {
+    struct ConstantATan2 : public ExpressionBase<REAL_T, ConstantATan2<REAL_T, EXPR2> > {
 
-        LiteralATan2(const REAL_T& expr1, const ExpressionBase<REAL_T, EXPR2>& expr2)
+        ConstantATan2(const REAL_T& expr1, const ExpressionBase<REAL_T, EXPR2>& expr2)
         : expr1_m(expr1), expr2_m(expr2.Cast()) {
         }
 
@@ -1142,7 +1651,7 @@ namespace ad {
             return std::atan2(expr1_m, expr2_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             REAL_T dx = 0;
 
             if (found) {
@@ -1169,6 +1678,13 @@ namespace ad {
             this->expr2_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr2_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr2_m.PushIds(ids);
+        }
 
 
     private:
@@ -1177,6 +1693,11 @@ namespace ad {
         const ExpressionBase<REAL_T, EXPR2>& expr2_m;
     };
 
+    /**
+     * Expression template for computing the square root of an expression
+     * template.
+     * @param a
+     */
     template <class REAL_T, class EXPR>
     struct Sqrt : public ExpressionBase<REAL_T, Sqrt<REAL_T, EXPR> > {
 
@@ -1188,7 +1709,7 @@ namespace ad {
             return std::sqrt(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1211,10 +1732,22 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
+
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     *Expression template for computing the power of a expression template,
+     * where both arguments are expression templates. 
+     */
     template <class REAL_T, class EXPR1, class EXPR2>
     struct Pow : public ExpressionBase<REAL_T, Pow<REAL_T, EXPR1, EXPR2> > {
 
@@ -1226,7 +1759,7 @@ namespace ad {
             return std::pow(expr1_m.GetValue(), expr2_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             REAL_T dx = expr1_m.Derivative(id, found);
             REAL_T dx2 = expr2_m.Derivative(id, found);
             if (found) {
@@ -1255,6 +1788,15 @@ namespace ad {
             this->expr2_m.Push(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr1_m.PushStorage(ids);
+            this->expr2_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr1_m.PushIds(ids);
+            this->expr2_m.Push(ids);
+        }
 
 
     private:
@@ -1263,22 +1805,29 @@ namespace ad {
         const EXPR2& expr2_m;
     };
 
+    /**
+     * Expression template for computing the power of a expression template, 
+     * where the second argument(the power) is a constant.
+     * 
+     * @param expr
+     * @param constant
+     */
     template <class REAL_T, class EXPR>
-    struct PowLiteral : public ExpressionBase<REAL_T, PowLiteral<REAL_T, EXPR> > {
+    struct PowConstant : public ExpressionBase<REAL_T, PowConstant<REAL_T, EXPR> > {
 
-        PowLiteral(const ExpressionBase<REAL_T, EXPR>& expr, const REAL_T & literal)
-        : expr_m(expr.Cast()), literal_m(literal) {
+        PowConstant(const ExpressionBase<REAL_T, EXPR>& expr, const REAL_T & constant)
+        : expr_m(expr.Cast()), constant_m(constant) {
         }
 
         inline const REAL_T GetValue() const {
-            return std::pow(expr_m.GetValue(), literal_m);
+            return std::pow(expr_m.GetValue(), constant_m);
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
                 REAL_T v = expr_m.GetValue();
-                REAL_T v2 = literal_m;
+                REAL_T v2 = constant_m;
 
                 return (dx * v2) *std::pow(v, (v2 - static_cast<REAL_T> (1.0)));
             } else {
@@ -1292,7 +1841,7 @@ namespace ad {
 
         void Push(std::vector<Statement<REAL_T> > &statements) const {
             this->expr_m.Push(statements);
-            statements.push_back(Statement<REAL_T > (CONSTANT, literal_m));
+            statements.push_back(Statement<REAL_T > (CONSTANT, constant_m));
             statements.push_back(Statement<REAL_T > (POW));
         }
 
@@ -1300,25 +1849,39 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
     private:
 
         const EXPR& expr_m;
-        const REAL_T& literal_m;
+        const REAL_T& constant_m;
     };
 
+    /**
+     * Expression template to compute the the value of a constant raised to 
+     * an expression template.
+     * 
+     * @param constant
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
-    struct LiteralPow : public ExpressionBase<REAL_T, LiteralPow<REAL_T, EXPR> > {
+    struct ConstantPow : public ExpressionBase<REAL_T, ConstantPow<REAL_T, EXPR> > {
 
-        LiteralPow(const REAL_T& literal, const ExpressionBase<REAL_T, EXPR>& expr)
-        : literal_m(literal), expr_m(expr.Cast()) {
+        ConstantPow(const REAL_T& constant, const ExpressionBase<REAL_T, EXPR>& expr)
+        : constant_m(constant), expr_m(expr.Cast()) {
         }
 
         inline const REAL_T GetValue() const {
-            return std::pow(literal_m, expr_m.GetValue());
+            return std::pow(constant_m, expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             //          REAL_t dx = 0.0;
             //            if (found) {
             //                REAL_t v = a_;
@@ -1336,7 +1899,7 @@ namespace ad {
         }
 
         void Push(std::vector<Statement<REAL_T> > &statements) const {
-            statements.push_back(Statement<REAL_T > (CONSTANT, literal_m));
+            statements.push_back(Statement<REAL_T > (CONSTANT, constant_m));
             this->expr_m.Push(statements);
             statements.push_back(Statement<REAL_T > (POW));
         }
@@ -1345,13 +1908,24 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
     private:
 
-        const REAL_T& literal_m;
+        const REAL_T& constant_m;
         const ExpressionBase<REAL_T, EXPR>& expr_m;
     };
 
+    /**
+     * Expression template to compute the log of an expression template.
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Log : public ExpressionBase<REAL_T, Log<REAL_T, EXPR> > {
 
@@ -1363,7 +1937,7 @@ namespace ad {
             return std::log(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
 
@@ -1387,12 +1961,25 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template to compute the log base 10 of an expression 
+     * template.
+     * 
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Log10 : public ExpressionBase<REAL_T, Log10<REAL_T, EXPR> > {
 
@@ -1404,7 +1991,7 @@ namespace ad {
             return std::log10(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1427,11 +2014,23 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
+
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template to compute e raised to a expression template.
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Exp : public ExpressionBase<REAL_T, Exp<REAL_T, EXPR> > {
 
@@ -1443,7 +2042,7 @@ namespace ad {
             return std::exp(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             bool f = false;
             REAL_T dx = expr_m.Derivative(id, f);
@@ -1468,11 +2067,29 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
+
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template used to protect overflow in exp calculations. 
+     * 
+     * Author: Dave Fournier.
+     * Original implementation in ADMB.
+     * 
+     * Source: http://admb-project.org/documentation/api/mfexp_8cpp_source.html
+     * 
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct MFExp : public ExpressionBase<REAL_T, MFExp<REAL_T, EXPR> > {
 
@@ -1498,7 +2115,7 @@ namespace ad {
             }
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1521,12 +2138,25 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
     private:
         const EXPR& expr_m;
         REAL_T value_m;
     };
 
+    /**
+     * Expression template for computing the hyperbolic sine of an expression 
+     * template.
+     * 
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Sinh : public ExpressionBase<REAL_T, Sinh<REAL_T, EXPR> > {
 
@@ -1538,7 +2168,7 @@ namespace ad {
             return std::sinh(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1561,12 +2191,23 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for computing the hyperbolic cosine of an 
+     * expression template.
+     */
     template <class REAL_T, class EXPR>
     struct Cosh : public ExpressionBase<REAL_T, Cosh<REAL_T, EXPR> > {
 
@@ -1578,7 +2219,7 @@ namespace ad {
             return std::cosh(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1601,12 +2242,25 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for computing the hyperbolic tangent of an expresison
+     * template.
+     * 
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Tanh : public ExpressionBase<REAL_T, Tanh<REAL_T, EXPR> > {
 
@@ -1618,7 +2272,7 @@ namespace ad {
             return std::tanh(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1642,11 +2296,23 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for handling the absolute value of a expression 
+     * template.
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Fabs : public ExpressionBase<REAL_T, Fabs<REAL_T, EXPR> > {
 
@@ -1658,7 +2324,7 @@ namespace ad {
             return std::fabs(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
 
             REAL_T dx = expr_m.Derivative(id, found);
             if (found) {
@@ -1682,11 +2348,23 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for handling the floor of an expression template.
+     * 
+     * @param a
+     */
     template <class REAL_T, class EXPR>
     struct Floor : public ExpressionBase<REAL_T, Floor<REAL_T, EXPR> > {
 
@@ -1698,7 +2376,7 @@ namespace ad {
             return std::floor(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return 0.0;
         }
 
@@ -1715,12 +2393,22 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
 
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
     private:
         const EXPR& expr_m;
     };
 
+    /**
+     * Expression template for handling the ceiling of an expression template.
+     * @param expr
+     */
     template <class REAL_T, class EXPR>
     struct Ceil : public ExpressionBase<REAL_T, Ceil<REAL_T, EXPR> > {
 
@@ -1732,7 +2420,7 @@ namespace ad {
             return std::ceil(expr_m.GetValue());
         }
 
-        inline const REAL_T Derivative(const uint32_t &id, bool &found, uint32_t index = 0) const {
+        inline const REAL_T Derivative(const uint32_t &id, bool &found) const {
             return 0.0;
         }
 
@@ -1749,6 +2437,13 @@ namespace ad {
             this->expr_m.PushIds(ids);
         }
 
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+            this->expr_m.PushStorage(ids);
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            this->expr_m.PushIds(ids);
+        }
 
     private:
         const EXPR& expr_m;
@@ -1759,7 +2454,10 @@ namespace ad {
 
 
 
-
+/**
+ * Utility functions added to the standard name space. Mostly cmath overloads 
+ * for expressions.
+ */
 namespace std {
 
     /**
@@ -1863,9 +2561,9 @@ namespace std {
      */
     template <class REAL_T, class EXPR>
     inline
-    ad::ATan2Literal<REAL_T, EXPR> atan2(const ad::ExpressionBase<REAL_T, EXPR>& expr,
+    ad::ATan2Constant<REAL_T, EXPR> atan2(const ad::ExpressionBase<REAL_T, EXPR>& expr,
     const REAL_T& val) {
-        return ad::ATan2Literal<REAL_T, EXPR > (expr.Cast(), val);
+        return ad::ATan2Constant<REAL_T, EXPR > (expr.Cast(), val);
     }
 
     /**
@@ -1877,9 +2575,9 @@ namespace std {
      */
     template <class REAL_T, class EXPR>
     inline
-    ad::LiteralATan2<REAL_T, EXPR> atan2(const REAL_T& val,
+    ad::ConstantATan2<REAL_T, EXPR> atan2(const REAL_T& val,
     const ad::ExpressionBase<REAL_T, EXPR>& expr) {
-        return ad::LiteralATan2<REAL_T, EXPR > (val, expr.Cast());
+        return ad::ConstantATan2<REAL_T, EXPR > (val, expr.Cast());
     }
 
     /**
@@ -1916,9 +2614,9 @@ namespace std {
      */
     template <class REAL_T, class EXPR>
     inline
-    ad::PowLiteral<REAL_T, EXPR> pow(const ad::ExpressionBase<REAL_T, EXPR>& expr,
+    ad::PowConstant<REAL_T, EXPR> pow(const ad::ExpressionBase<REAL_T, EXPR>& expr,
     const REAL_T& val) {
-        return ad::PowLiteral<REAL_T, EXPR > (expr.Cast(), val);
+        return ad::PowConstant<REAL_T, EXPR > (expr.Cast(), val);
     }
 
     /**
@@ -1930,9 +2628,9 @@ namespace std {
      */
     template <class REAL_T, class EXPR>
     inline
-    ad::LiteralPow<REAL_T, EXPR> pow(const REAL_T& val,
+    ad::ConstantPow<REAL_T, EXPR> pow(const REAL_T& val,
     const ad::ExpressionBase<REAL_T, EXPR>& expr) {
-        return ad::LiteralPow<REAL_T, EXPR > (val, expr.Cast());
+        return ad::ConstantPow<REAL_T, EXPR > (val, expr.Cast());
     }
 
     /**
@@ -2046,36 +2744,98 @@ namespace std {
 namespace ad {
 
     /**
-     * Interface class for storing variable information. The point of this class 
-     * is to provide flexibility of the storage for the variables information. 
-     * For instance, it may be desired to store the data in a database or on 
-     * the disk rather than in memory. 
+     * Default implementation of the abstract VariableStorage class.
      */
     template<class REAL_T>
-    class VariableStorage {
-        ad::Variable<REAL_T>* variable_m;
+    class DefaultStorage : public VariableStorage<REAL_T> {
+        typedef std::vector<std::pair<bool, REAL_T> > GradientVector;
+        GradientVector g;
 
+        typedef IdsSet indepedndent_variables;
+        typedef IdsSet::iterator indepedndent_variables_iterator;
+        typedef IdsSet::const_iterator const_indepedndent_variables_iterator;
+        indepedndent_variables ids_m;
+
+        typedef std::vector<Statement<REAL_T> > ExpressionStatements;
+        ExpressionStatements statements_m;
+
+        REAL_T value_m;
     public:
 
-        VariableStorage(ad::Variable<REAL_T>* variable) : variable_m(variable) {
+        DefaultStorage() : value_m(0) {
 
         }
 
-        virtual const REAL_T GetDerivative(const uint32_t &id) = 0;
+        void SetValue(const REAL_T &value) {
+            this->value_m = value;
+        }
+
+        const REAL_T GetValue() {
+            return this->value_m;
+        }
+
+        const std::pair<bool, REAL_T> GetDerivative(const uint32_t &id) {
+
+            if (id> this->g.size()) {
+                return g[id];
+            } else {
+                return std::pair<bool, REAL_T > (false, 0);
+            }
+
+        }
+
+        void SetDerivative(const std::pair<bool, REAL_T> &entry, const uint32_t &id) {
+
+            if (g.size() < id) {
+                g.resize(id + 1);
+            }
+            g[id] = entry;
+        }
+
+        void AddId(const uint32_t &id) {
+            this->ids_m.insert(id);
+        }
+
+        void Merge(VariableStorage<REAL_T>* other) {
+            DefaultStorage<REAL_T>* ds = (DefaultStorage<REAL_T>*)other;
+            this->ids_m.insert(ds->ids_m.begin(), ds->ids_m.end());
+        }
+
+        const uint32_t DerivativeInfoSize() {
+            return this->g.size();
+        }
+
+        const void ClearDerivativeInfo() {
+            this->g.clear();
+        }
+
+        void AddStatement(const Statement<REAL_T> &statement) {
+            this->statements_m.push_back(statement);
+        }
+
+        const uint32_t ExpressionSize() {
+            return this->statements_m.size();
+        }
+
+        Statement<REAL_T> StatementAt(const uint32_t &index) {
+            //            if(index >= this->statements_m.size()){
+            //                std::cout<<"Error Statement<REAL_T> StatementAt(const uint32_t &index), index out of bounds."
+            //            }
+
+            return this->statements_m[index];
+        }
+
+        void ClearExpression() {
+            this->statements_m.clear();
+        }
+
+        void Reset() {
+            this->g.clear();
+            this->ids_m.clear();
+            this->statements_m.clear();
+        }
 
     };
-
-    template<class ForwardIt, class T>
-    bool binary_search(ForwardIt first, ForwardIt last, const T& value) {
-        first = std::lower_bound(first, last, value);
-        return (!(first == last) && !(value < *first));
-    }
-
-    template<class ForwardIt, class T, class Compare>
-    bool binary_search(ForwardIt first, ForwardIt last, const T& value, Compare comp) {
-        first = std::lower_bound(first, last, value, comp);
-        return (!(first == last) && !(comp(value, *first)));
-    }
 
     /**
      * Variable class used for calculations and storage of computed derivatives.
@@ -2098,17 +2858,18 @@ namespace ad {
      */
     template<class REAL_T, int group>
     class Variable : public ExpressionBase<REAL_T, Variable<REAL_T, group> > {
+        VariableStorage<REAL_T>* storage;
         REAL_T value_m;
-        uint32_t iv_id_m; //id when is a independent variable.
+
         std::string name_m;
         bool bounded_m;
         REAL_T min_boundary_m;
         REAL_T max_boundary_m;
         bool is_independent_m;
+        uint32_t iv_id_m; //id when is a independent variable.
 
-
-        uint32_t iv_min; //if this variable is caching derivatives, this is the min independent variable.
-        uint32_t iv_max; //if this variable is caching derivatives, this is the max independent variable.
+        //        uint32_t iv_min; //if this variable is caching derivatives, this is the min independent variable.
+        //        uint32_t iv_max; //if this variable is caching derivatives, this is the max independent variable.
 
 
         //        static std::set<uint32_t> independent_variables_g;
@@ -2116,32 +2877,6 @@ namespace ad {
 
         static bool is_supporting_arbitrary_order;
 
-
-        //#ifdef USE_MM_CACHE_MAP
-        //        typedef mm::cache_map<uint32_t, double> GradientMap;
-        //        typedef mm::cache_map<uint32_t, mm::cache_map<uint32_t, double> > MixedPartialsMap;
-        //        typedef GradientMap::const_iterator const_grads_iterator;
-        //        typedef GradientMap::iterator grads_iterator;
-        //        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
-        //        typedef MixedPartialsMap::iterator partials_iterator;
-        //#elif defined(USE_TR1_UNORDERED_MAP)
-        //        typedef std::tr1::unordered_map<uint32_t, double> GradientMap;
-        //        typedef std::tr1::unordered_map<uint32_t, std::tr1::unordered_map<uint32_t, double> > MixedPartialsMap;
-        //        typedef GradientMap::const_iterator const_grads_iterator;
-        //        typedef GradientMap::iterator grads_iterator;
-        //        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
-        //        typedef MixedPartialsMap::iterator partials_iterator;
-        //#elif defined(USE_HASH_TABLE)
-        //        typedef HashTable GradientMap;
-        //#else
-        //        typedef std::map<uint32_t, double> GradientMap;
-        //        typedef std::map<uint32_t, std::map<uint32_t, double> > MixedPartialsMap;
-        //        typedef GradientMap::const_iterator const_grads_iterator;
-        //        typedef GradientMap::iterator grads_iterator;
-        //        typedef MixedPartialsMap::const_iterator const_patrials_iterator;
-        //        typedef MixedPartialsMap::iterator partials_iterator;
-        //
-        //#endif
 
         typedef std::vector<std::pair<bool, REAL_T> > GradientVector;
         GradientVector g;
@@ -2155,16 +2890,38 @@ namespace ad {
         typedef std::vector<Statement<REAL_T> > ExpressionStatements;
         ExpressionStatements statements_m;
 
+        template <typename TT >
+        TT SwapBytes(const TT &u) {
+
+            union {
+                TT u;
+                unsigned char u8[sizeof (TT)];
+            } source, dest;
+
+            source.u = u;
+
+            for (size_t k = 0; k < sizeof (TT); k++)
+                dest.u8[k] = source.u8[sizeof (TT) - k - 1];
+
+            return dest.u;
+        }
+
+
     public:
         static uint32_t misses_g;
 
         /**
          * Default conclassor.
          */
-        Variable() : ExpressionBase<REAL_T, Variable<REAL_T> >(0), value_m(0.0), bounded_m(false), is_independent_m(false), iv_id_m(0) {
+        Variable() : ExpressionBase<REAL_T, Variable<REAL_T> >(0),
+        value_m(0.0),
+        bounded_m(false),
+        is_independent_m(false),
+        storage(new DefaultStorage<REAL_T>()),
+        iv_id_m(0) {
 
-            iv_min = std::numeric_limits<uint32_t>::max();
-            iv_max = std::numeric_limits<uint32_t>::min();
+            //            iv_min = std::numeric_limits<uint32_t>::max();
+            //            iv_max = std::numeric_limits<uint32_t>::min();
             //this->ids_m.set_empty_key(NULL);
             if (Variable::is_recording_g) {
                 if (Variable::IsSupportingArbitraryOrder()) {
@@ -2180,10 +2937,10 @@ namespace ad {
          * @param value
          * @param is_independent
          */
-        Variable(const REAL_T& value, bool is_independent = false) : is_independent_m(is_independent), ExpressionBase<REAL_T, Variable<REAL_T> >(0), value_m(value), iv_id_m(0) {
+        Variable(const REAL_T& value, bool is_independent = false) : storage(new DefaultStorage<REAL_T>()), value_m(value), is_independent_m(is_independent), iv_id_m(0) {
             //this->ids_m.set_empty_key(NULL);
-            iv_min = std::numeric_limits<uint32_t>::max();
-            iv_max = std::numeric_limits<uint32_t>::min();
+            //            iv_min = std::numeric_limits<uint32_t>::max();
+            //            iv_max = std::numeric_limits<uint32_t>::min();
             if (is_independent) {
                 //                this->id_m = IDGenerator::instance()->next();
                 this->SetAsIndependent(is_independent);
@@ -2203,14 +2960,17 @@ namespace ad {
          * 
          * @param rhs
          */
-        Variable(const Variable& orig) {
+        Variable(const Variable& orig) : storage(new DefaultStorage<REAL_T>()) {
+
             value_m = orig.GetValue();
             this->id_m = orig.GetId();
             this->iv_id_m = orig.iv_id_m;
             //            orig.PushIds(ids_m);
             //this->ids_m.set_empty_key(NULL);
             ids_m.insert(orig.ids_m.begin(), orig.ids_m.end()); // = orig.ids_m;
-            g = orig.g;
+            //            g = orig.g;
+            g.reserve(orig.g.size());
+            g.insert(g.begin(), orig.g.begin(), orig.g.end());
             //            has_m = orig.has_m;
 #if defined(USE_HASH_TABLE)
             this->gradients_m = HashTable(orig.gradients_m);
@@ -2221,8 +2981,8 @@ namespace ad {
             this->bounded_m = orig.bounded_m;
             this->min_boundary_m = orig.min_boundary_m;
             this->max_boundary_m = orig.max_boundary_m;
-            iv_min = orig.iv_min;
-            iv_max = orig.iv_max;
+            //            iv_min = orig.iv_min;
+            //            iv_max = orig.iv_max;
             if (Variable::IsSupportingArbitraryOrder()) {
                 orig.Push(this->statements_m);
             }
@@ -2234,13 +2994,13 @@ namespace ad {
          * @param rhs
          */
         template<class T>
-        Variable(const ExpressionBase<REAL_T, T>& expr) {
+        Variable(const ExpressionBase<REAL_T, T>& expr) : storage(new DefaultStorage<REAL_T>()) {
 
             //has_m.resize(IDGenerator::instance()->current() + 1);
 
             this->bounded_m = false;
-            iv_min = std::numeric_limits<uint32_t>::max();
-            iv_max = std::numeric_limits<uint32_t>::min();
+            //            iv_min = std::numeric_limits<uint32_t>::max();
+            //            iv_max = std::numeric_limits<uint32_t>::min();
             if (Variable::is_recording_g) {
                 //                this->id_m = expr.GetId();
                 //                ind_iterator it;
@@ -2275,6 +3035,7 @@ namespace ad {
         }
 
         ~Variable() {
+            delete storage;
 #if !defined(USE_HASH_TABLE)
             //            if (this->is_independent_m) {
             //                this->independent_variables_g.erase(this->GetId());
@@ -2287,6 +3048,1261 @@ namespace ad {
 
         size_t Size() {
             return this->statements_m.size();
+        }
+
+        /**
+         * Control function. If true, derivatives are computed. If false
+         * expressions are only evaluated.
+         * 
+         * @param is_recording
+         */
+        static void SetRecording(const bool &is_recording) {
+            Variable::is_recording_g = is_recording;
+        }
+
+        /**
+         * If true, derivatives are calculated and stored. If false,
+         * expressions are evaluated for value only.
+         * 
+         * @return 
+         */
+        static bool IsRecording() {
+            return Variable::is_recording_g;
+        }
+
+        /**
+         * If set to true, the expression is recorded into a vector of 
+         * statements that can be manipulated to compute derivatives of 
+         * arbitrary order. This functionality is costly and is rarely required,
+         * thus default setting is false.
+         * 
+         * @param support_arbitrary_order
+         */
+        static void SetSupportArbitraryOrder(const bool &support_arbitrary_order) {
+            Variable::is_supporting_arbitrary_order = support_arbitrary_order;
+        }
+
+        /*
+         * If true, expressions are recorded into a vector of statements that 
+         * can be used later to compute derivatives of arbitrary order, or
+         * be used to build expression strings.
+         * 
+         */
+        static bool IsSupportingArbitraryOrder() {
+            return Variable::is_supporting_arbitrary_order;
+        }
+
+        /**
+         * Returns the value of this variable.
+         * 
+         * @return 
+         */
+        inline const REAL_T GetValue() const {
+            return this->value_m;
+        }
+
+        /**
+         * Sets the value of this variable. If the variable is bounded, 
+         * the value will be set between the min and max boundary. If the
+         * value is less than the minimum boundary, the variables value is 
+         * set to minimum boundary. If the  value is greater than the maximum
+         * boundary, the variables value is set to maximum boundary. If the 
+         * value is signaling nan, the value is set to the mid point between
+         * the min and max boundary. 
+         * 
+         * @param value
+         */
+        void SetValue(const REAL_T &value) {
+            if (this->bounded_m) {
+                if (value != value) {//nan
+                    this->value_m = this->min_boundary_m + (this->max_boundary_m - this->min_boundary_m) / 2.0;
+
+                    return;
+                }
+
+                if (value<this->min_boundary_m) {
+                    this->value_m = this->min_boundary_m;
+                } else if (value>this->max_boundary_m) {
+                    this->value_m = this->max_boundary_m;
+
+
+                } else {
+                    this->value_m = value;
+                }
+            } else {
+                this->value_m = value;
+            }
+        }
+
+        /**
+         * Returns the name of this variable. Names are not initialized and 
+         * if it is not set this function will return a empty string.
+         * @return 
+         */
+        std::string GetName() const {
+            return name_m;
+        }
+
+        /**
+         * Set the name of this variable.
+         * 
+         * @param name
+         */
+        void SetName(std::string name) {
+            this->name_m = name;
+        }
+
+        /**
+         * Returns true if this variable is bounded. Otherwise,
+         * false.
+         * 
+         * @return 
+         */
+        bool IsBounded() {
+            return this->bounded_m;
+        }
+
+        /**
+         * Set the min and max boundary for this variable. 
+         * @param min
+         * @param max
+         */
+        void SetBounds(const REAL_T& min, const REAL_T& max) {
+            this->bounded_m = true;
+            this->max_boundary_m = max;
+            this->min_boundary_m = min;
+            this->SetValue(this->GetValue());
+        }
+
+        /**
+         * Return the minimum boundary for this variable. The default value 
+         * is the results of std::numeric_limits<REAL_t>::min().
+         * 
+         * @return 
+         */
+        const REAL_T GetMinBoundary() {
+            return this->min_boundary_m;
+        }
+
+        /**
+         * Return the maximum boundary for this variable. The default value 
+         * is the results of std::numeric_limits<REAL_t>::max().
+         * 
+         * @return 
+         */
+        const REAL_T GetMaxBoundary() {
+            return this->max_boundary_m;
+        }
+
+        /**
+         * Make this Variable an independent variable. If set to true,
+         * the Variables unique identifier is registered in the static set
+         * of independent variables. During function evaluations, gradient 
+         * information is accumulated in post-order wrt to variables in the 
+         * static set of independent variables. If set false, this Variables 
+         * unique identifier will be removed from the set, if it existed.
+         * 
+         * 
+         * To access the derivative wrt to a Variable, call function:
+         * 
+         * const REAL_t wrt(const Variable & ind)
+         * 
+         * 
+         * @param is_independent
+         */
+        void SetAsIndependent(const bool &is_independent) {
+            if (this->iv_id_m == 0) {
+                this->iv_id_m = IDGenerator::instance()->next();
+                if (Variable<REAL_T>::IsSupportingArbitraryOrder()) {
+                    this->statements_m.clear();
+                    this->statements_m.push_back(Statement<REAL_T > (VARIABLE, this->GetValue(), this->GetId()));
+                }
+                //                this->id_m = iv_id_m;
+                //                if (this->iv_min == std::numeric_limits<uint32_t>::max() && this->iv_max == std::numeric_limits<uint32_t>::min()) {
+                //                    this->iv_max = this->GetId();
+                //                    this->iv_min = this->GetId();
+                //                }
+            }
+            if (this->is_independent_m && !is_independent) {
+                //                Variable::independent_variables_g.erase(this->GetId());
+                this->id_m = 0;
+                this->is_independent_m = false;
+            }
+
+            if (!this->is_independent_m && is_independent) {
+                //                Variable::independent_variables_g.insert(this->GetId());
+                this->id_m = this->iv_id_m;
+                this->is_independent_m = true;
+            }
+        }
+
+        bool IsIndependent() {
+            return this->is_independent_m;
+        }
+
+        /**
+         * Returns the derivative with respect to a variables who's
+         * unique identifier is equal to the parameter id.
+         * 
+         * @param id
+         * @param found
+         * @return 
+         */
+        const REAL_T Derivative(const uint32_t &id, bool &found) const {
+
+
+
+            if (this->Cast().id_m == id) {
+                found = true;
+                return 1.0;
+
+            } else {
+
+#if defined(USE_HASH_TABLE)
+                HashTable::Cell* entry = this->gradients_m.Lookup(id);
+
+                if (entry != NULL) {
+                    return entry->value;
+                } else {
+                    return 0.0;
+                }
+
+#else
+
+                //                if(id < this->g.size()){
+                //                    if(g[id] != 0){
+                //                        found = true;
+                //                    }
+                //                    
+                //                    return g[id];
+                //                }
+
+                //                std::find(this->ids_m.begin(),this->ids_m.end(),id );
+
+                //                if (ad::binary_search(ids_m.begin(), ids_m.end(), id)) {
+                //                    found = true;
+                //                    return g[id];
+                //                } else {
+                //                    return 0.0;
+                //                }
+                //                
+                if (id < g.size()) {
+                    if (g[id].first) {
+                        found = true;
+                        return g[id].second;
+                    } else {
+                        return 0.0;
+                    }
+                } else {
+                    return 0.0;
+                }
+                //                if (this->ids_m.find(id) != this->ids_m.end()) {
+                //                    found = true;
+                //                    return g[id].second;
+                //                } else {
+                //                    return 0.0;
+                //                }
+
+                //                 const_grads_iterator git = this->gradients_m.find(id);
+                //                if (git != this->gradients_m.end()) {
+                //                    found = true;
+                //                    return git->second;
+                //                } else {
+                //                    Variable<REAL_T>::misses_g++;
+                //                    return 0.0;
+                //                }
+            }
+
+#endif
+
+
+        }
+
+        void GetIdRange(uint32_t &min, uint32_t & max) const {
+
+            if (this->iv_min < min) {
+                min = this->iv_min;
+            }
+
+            if (this->iv_max > max) {
+                max = this->iv_max;
+            }
+
+            if (this->GetId() > 0) {
+                if (this->GetId() < min) {
+                    min = this->GetId();
+                }
+
+                //                if (this->GetId()) {
+                //                    max = this->GetId();
+                //                }
+            }
+            //
+            //                        if (min == std::numeric_limits<uint32_t>::max()) {
+            //                            min = max;
+            //                        }
+
+            //            std::cout << min << " " << max << "\n";
+
+
+
+        }
+
+        void Push(std::vector<Statement<REAL_T> > &statements) const {
+            statements.insert(statements.end(), this->statements_m.begin(), statements_m.end());
+            //            if (this->statements_m.size() > 0) {
+            //                statements.insert(statements.end(), this->statements_m.begin(), statements_m.end());
+            //            } else {
+            //                statements.push_back(Statement<REAL_T > (VARIABLE, this->GetValue(), this->GetId()));
+            //            }
+        }
+
+        inline void PushIds(IdsSet &ids) const {
+            if (this->GetId() != 0) {
+                //                uint32_t id = uint32_t
+                ids.insert(this->GetId());
+            } else {
+                ids.insert(this->ids_m.begin(), this->ids_m.end());
+            }
+        }
+
+        inline void PushStorage(VariableStorage<REAL_T> * ids) const {
+
+            if (Variable<REAL_T, group>::IsRecording()) {
+
+                if (this->GetId() != 0) {
+                    ids->AddId(this->GetId());
+                } else {
+                    ids->Merge(this->storage);
+                }
+
+
+                for (int i = 0; i < this->storage->DerivativeInfoSize(); i++) {
+                    ids->SetDerivative(this->storage->GetDerivative(i), i);
+                }
+
+                if (Variable<REAL_T, group>::IsSupportingArbitraryOrder()) {
+                    for (int i = 0; i < this->storage->ExpressionSize(); i++) {
+                        ids->AddStatement(this->storage->StatementAt(i));
+                    }
+                }
+
+            }
+        }
+
+        inline void PushIds(std::vector < std::pair<bool, REAL_T> > & ids) const {
+            for (int i = 1; i< this->g.size(); i++) {
+                if (g[i].first) {
+                    ids[i].first = true;
+                }
+            }
+        }
+
+        /**
+         * Finds the derivative in the encapsulated gradient map 
+         * w.r.t a variable. 
+         * 
+         * @param ind
+         * @return 
+         */
+        const REAL_T WRT(const Variable & ind) {
+
+#if defined(USE_HASH_TABLE)
+            HashTable::Cell* entry = this->gradients_m.Lookup(ind.GetId());
+
+            if (entry != NULL) {
+                return entry->value;
+            } else {
+                return 0.0;
+            }
+#else
+
+            if (ind.GetId() < g.size()) {
+                if (g[ind.GetId()].first) {
+
+                    return g[ind.GetId()].second;
+                } else {
+                    return 0.0;
+                }
+            } else {
+                return 0.0;
+            }
+            //            if (this->ids_m.find(ind.GetId()) != this->ids_m.end()) {
+            //                //                found = true;
+            //                return g[ind.GetId()].second;
+            //            } else {
+            //                return 0.0;
+            //            }
+
+            //            const_grads_iterator git = this->gradients_m.find(ind.GetId());
+            //            if (git != this->gradients_m.end()) {
+            //                return git->second;
+            //            } else {
+            //                return 0;
+            //            }
+#endif
+        }
+
+        /**
+         * Finds the derivative in the encapsulated gradient map 
+         * w.r.t a variable. 
+         * @param ind
+         * @return 
+         */
+        const REAL_T WRT(const Variable & ind) const {
+
+#if defined(USE_HASH_TABLE)
+            HashTable::Cell* entry = this->gradients_m.Lookup(ind.GetId());
+
+            if (entry != NULL) {
+                return entry->value;
+            } else {
+                return 0.0;
+            }
+#else
+
+            if (ind.GetId() < g.size()) {
+                if (g[ind.GetId()].first) {
+
+                    return g[ind.GetId()].second;
+                } else {
+                    return 0.0;
+                }
+            } else {
+                return 0.0;
+            }
+            //            if (this->ids_m.find(ind.GetId()) != this->ids_m.end()) {
+            //                //                found = true;
+            //                return g[ind.GetId()].second;
+            //            } else {
+            //                return 0.0;
+            //            }
+            //            const_grads_iterator git = this->gradients_m.find(ind.GetId());
+            //            if (git != this->gradients_m.end()) {
+            //                return git->second;
+            //            } else {
+            //                return 0;
+            //            }
+#endif
+        }
+
+        void Serialize(std::ostream &out) {
+
+            bool little_endian = true;
+
+            int num = 1;
+            if (*(char *) &num == 1) {
+                little_endian = true;
+            } else {
+                little_endian = false;
+            }
+
+            //id stuff
+            uint32_t id = this->GetId();
+
+
+            if (!little_endian) {
+                id = SwapBytes<uint32_t > (id);
+            }
+
+            out.write(reinterpret_cast<const char*> (&id), sizeof (uint32_t));
+
+            //name
+            uint32_t namesize = (uint32_t)this->GetName().size();
+
+            if (!little_endian) {
+                namesize = SwapBytes<uint32_t > (namesize);
+            }
+            out.write(reinterpret_cast<const char*> (&namesize), sizeof (uint32_t));
+
+
+            out.write(this->GetName().data(), namesize);
+            //is independent
+            if (this->IsIndependent()) {
+                out << '1';
+            } else {
+                out << '0';
+            }
+            //value stuff
+
+            //bounded
+            if (this->IsBounded()) {
+                out << '1';
+            } else {
+                out << '0';
+            }
+            //min
+            REAL_T value = this->GetMinBoundary();
+            if (!little_endian) {
+                value = SwapBytes<REAL_T > (value);
+            }
+
+            out.write(reinterpret_cast<const char*> (&value), sizeof ( REAL_T));
+
+            //max
+            value = this->GetMaxBoundary();
+
+            if (!little_endian) {
+                value = SwapBytes<REAL_T > (value);
+            }
+            out.write(reinterpret_cast<const char*> (&value), sizeof ( REAL_T));
+
+            //actual value
+            value = this->GetValue();
+
+            if (!little_endian) {
+                value = SwapBytes<REAL_T > (value);
+            }
+            out.write(reinterpret_cast<const char*> (&value), sizeof ( REAL_T));
+
+            //derivative info
+            uint32_t dsize = this->g.size();
+
+
+            if (!little_endian) {
+                dsize = SwapBytes<uint32_t > (dsize);
+            }
+            out.write(reinterpret_cast<const char*> (&dsize), sizeof (dsize));
+
+
+            for (int i = 0; i < this->g.size(); i++) {
+
+                bool b = this->g[i].first;
+                value = this->g[i].second;
+                if (b) {
+                    out << '1';
+                } else {
+                    out << '0';
+                }
+                //
+                //                if (!little_endian) {
+                //                    id = SwapBytes<uint32_t > (id);
+                //                }
+                //
+                //                out.write(reinterpret_cast<const char*> (&id), sizeof (id));
+                //                
+                if (!little_endian) {
+                    value = SwapBytes<REAL_T > (value);
+                }
+
+                out.write(reinterpret_cast<const char*> (&value), sizeof ( REAL_T));
+
+            }
+
+            //statements
+            uint32_t ssize = this->statements_m.size();
+
+            if (!little_endian) {
+                ssize = SwapBytes<uint32_t > (ssize);
+            }
+
+            out.write(reinterpret_cast<const char*> (&ssize), sizeof (ssize));
+
+            uint32_t sid;
+            uint32_t sop;
+            REAL_T sval;
+
+            for (int i = 0; i < this->statements_m.size(); i++) {
+                sid = statements_m[i].id_m;
+                if (!little_endian) {
+                    sid = SwapBytes<uint32_t > (sid);
+                }
+                out.write(reinterpret_cast<const char*> (&sid), sizeof ( uint32_t));
+
+                sop = statements_m[i].op_m;
+                if (!little_endian) {
+                    sop = SwapBytes<uint32_t > (sop);
+                }
+                out.write(reinterpret_cast<const char*> (&sop), sizeof ( uint32_t));
+
+                sval = statements_m[i].value_m;
+                if (!little_endian) {
+                    sval = SwapBytes<REAL_T > (sval);
+                }
+                out.write(reinterpret_cast<const char*> (&sval), sizeof ( REAL_T));
+            }
+
+
+
+
+
+        }
+
+        const Variable<REAL_T, group> Deserialize(std::istream &in) {
+
+
+            Variable v;
+
+            bool little_endian = true;
+
+            int num = 1;
+            if (*(char *) &num == 1) {
+                little_endian = true;
+            } else {
+                little_endian = false;
+            }
+
+            if (!in.good()) {
+                std::cout << "Error in Deserialize(std::istream &in), cannot read stream!";
+                return v;
+            }
+
+
+
+            //read id
+            uint32_t* id;
+            char idc[sizeof (uint32_t) ];
+            in.read(idc, sizeof (uint32_t));
+            id = reinterpret_cast<uint32_t*> (idc);
+
+            if (!little_endian) {
+                v.id_m = SwapBytes<uint32_t > (*id);
+            } else {
+                v.id_m = *id;
+            }
+
+            //read name
+            uint32_t* ns;
+            uint32_t name_size;
+            char nsc[sizeof (uint32_t) ];
+            in.read(nsc, sizeof (uint32_t));
+            ns = reinterpret_cast<uint32_t*> (nsc);
+
+            if (!little_endian) {
+                name_size = SwapBytes<uint32_t > (*ns);
+            } else {
+                name_size = *ns;
+            }
+
+            char namec[name_size + 1];
+            namec[name_size] = '\0';
+            in.read(namec, name_size);
+            v.SetName(std::string(namec));
+
+
+
+
+            //is independent
+            char inde;
+            in >> inde;
+
+            if (inde == '1') {
+                v.is_independent_m = true;
+            } else {
+                v.is_independent_m = false;
+            }
+
+            //is bounded
+            char bounded;
+            in >> bounded;
+
+            if (bounded == '1') {
+                v.bounded_m = true;
+            } else {
+                v.bounded_m = false;
+            }
+
+
+            //values min,max,actual
+            REAL_T* value_ptr;
+            REAL_T value;
+            char valc[sizeof (REAL_T)];
+            in.read(valc, sizeof (REAL_T));
+            value_ptr = reinterpret_cast<REAL_T*> (valc);
+            if (!little_endian) {
+                value = SwapBytes<uint32_t > (*value_ptr);
+            } else {
+                value = *value_ptr;
+            }
+            v.min_boundary_m = value;
+
+            in.read(valc, sizeof (REAL_T));
+            value_ptr = reinterpret_cast<REAL_T*> (valc);
+
+            if (!little_endian) {
+                value = SwapBytes<uint32_t > (*value_ptr);
+            } else {
+                value = *value_ptr;
+            }
+            v.max_boundary_m = value;
+
+
+            in.read(valc, sizeof (REAL_T));
+            value_ptr = reinterpret_cast<REAL_T*> (valc);
+
+            if (!little_endian) {
+                value = SwapBytes<uint32_t > (*value_ptr);
+            } else {
+                value = *value_ptr;
+            }
+            v.value_m = value;
+
+
+            //gradients
+            uint32_t* gsize;
+            uint32_t gs;
+            char gsizec[sizeof (uint32_t) ];
+            in.read(gsizec, sizeof (uint32_t));
+            gsize = reinterpret_cast<uint32_t*> (gsizec);
+            if (!little_endian) {
+                gs = SwapBytes<uint32_t > (*gsize);
+            } else {
+                gs = *gsize;
+            }
+
+
+
+            v.g.resize(gs);
+
+
+            for (uint32_t i = 0; i < gs; i++) {
+
+                char c = '0';
+                in >> c;
+
+                bool b = false;
+                if (c == '1') {
+                    b = true;
+                }
+
+
+                in.read(valc, sizeof (REAL_T));
+                value_ptr = reinterpret_cast<REAL_T*> (valc);
+                if (!little_endian) {
+                    value = SwapBytes<uint32_t > (*value_ptr);
+                } else {
+                    value = *value_ptr;
+                }
+
+                //                std::cout << v[] << "\n";
+                v.g[i] = std::pair<bool, REAL_T > (b, value);
+
+            }
+
+            //statements
+
+            uint32_t* ssize;
+            uint32_t ss;
+            char ssizec[sizeof (uint32_t) ];
+            in.read(ssizec, sizeof (uint32_t));
+            ssize = reinterpret_cast<uint32_t*> (ssizec);
+            if (!little_endian) {
+                ss = SwapBytes<uint32_t > (*ssize);
+            } else {
+                ss = *ssize;
+            }
+
+            v.statements_m.resize(ss);
+
+            for (uint32_t i = 0; i < ss; i++) {
+
+
+                uint32_t* sid_ptr;
+                uint32_t sid;
+                char sidc[sizeof (uint32_t) ];
+                in.read(sidc, sizeof (uint32_t));
+                sid_ptr = reinterpret_cast<uint32_t*> (sidc);
+                if (!little_endian) {
+                    sid = SwapBytes<uint32_t > (*sid_ptr);
+                } else {
+                    sid = *sid_ptr;
+                }
+
+
+                uint32_t* sop_ptr;
+                uint32_t sop;
+                char sopc[sizeof (uint32_t) ];
+                in.read(sopc, sizeof (uint32_t));
+                sop_ptr = reinterpret_cast<uint32_t*> (sopc);
+                if (!little_endian) {
+                    sop = SwapBytes<uint32_t > (*sop_ptr);
+                } else {
+                    sop = *sop_ptr;
+                }
+
+
+                REAL_T* value_ptr;
+                REAL_T value;
+                char valc[sizeof (REAL_T)];
+                in.read(valc, sizeof (REAL_T));
+                value_ptr = reinterpret_cast<REAL_T*> (valc);
+                if (!little_endian) {
+                    value = SwapBytes<uint32_t > (*value_ptr);
+                } else {
+                    value = *value_ptr;
+                }
+                //                Operation op = 
+                v.statements_m[i] = Statement<REAL_T > (static_cast<Operation> (sop), value, sid);
+            }
+
+
+
+            return v;
+
+        }
+
+        /**
+         * Set the variable equal to the real type rhs.
+         * 
+         * The gradient map will be cleared.
+         * 
+         * @param rhs
+         * @return 
+         */
+        Variable& operator=(const REAL_T& rhs) {
+            this->SetValue(rhs);
+            //            iv_min = std::numeric_limits<uint32_t>::max();
+            //            iv_max = std::numeric_limits<uint32_t>::min();
+
+#if defined(USE_HASH_TABLE)
+            this->gradients_m.Clear();
+#else
+            //            this->gradients_m.clear();
+            this->g.clear();
+            if (Variable::IsRecording()) {
+                if (Variable::is_supporting_arbitrary_order) {
+                    this->statements_m.clear();
+                    this->statements_m.push_back(Statement<REAL_T > (VARIABLE, this->GetValue(), this->GetId()));
+                }
+            }
+#endif
+
+            return *this;
+        }
+
+        /**
+         * Sets the value of this Variable to that of rhs. Derivatives 
+         * are stored in the encapsulated gradient map.
+         * 
+         * @param rhs
+         * @return 
+         */
+        Variable& operator=(const Variable& other) {
+            //                        this->id = other.getId();
+            //has_m.resize(IDGenerator::instance()->current() + 1);
+            this->SetValue(other.GetValue());
+
+            //            this->gradients.clear();
+            if (ad::Variable<REAL_T>::is_recording_g) {
+
+#if defined(USE_HASH_TABLE)
+                ind_iterator it;
+                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                    bool found = false;
+                    this->gradients_m.Insert(*it)->value = other.Derivative(*it, found);
+                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                }
+#else
+                //                this->gradients.insert(rhs.gradients.begin(), rhs.gradients.end());
+                //                ind_iterator it;
+                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                //                    bool found = false;
+                //                    this->gradients_m[(*it)] = other.Derivative(*it, found);
+                //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                //                }
+                // other.GetIdRange(this->iv_min, this->iv_max);
+                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
+                indepedndent_variables_iterator it;
+                other.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
+                    bool found = true;
+                    this->g[*it].first = true;
+                    this->g[*it].second = other.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
+                }
+
+
+#endif
+
+                if (Variable::is_supporting_arbitrary_order) {
+
+                    std::vector<Statement<REAL_T> > temp_stmnt;
+                    other.Push(temp_stmnt);
+                    this->statements_m = temp_stmnt;
+                }
+
+            }
+            this->is_independent_m = other.is_independent_m;
+            return *this;
+        }
+
+        /**
+         * Set the Variables value to the result of the expression rhs. 
+         * Derivatives are calculated and stored in the encapsulated 
+         * gradient map.
+         * @param rhs
+         * @return 
+         */
+        template<class T>
+        Variable& operator=(const ExpressionBase<REAL_T, T>& expr) {
+
+            //            this->id_m = expr.GetId();
+            //has_m.resize(IDGenerator::instance()->current() + 1);
+            if (Variable::is_recording_g) {
+                //                ind_iterator it; // = this->gradients.lower_bound();
+#if defined(USE_HASH_TABLE)
+                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                    bool found = false;
+                    this->gradients_m.Insert(*it)->value = expr.Derivative(*it, found);
+                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                }
+#else
+                //                                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                //                                    bool found = false;
+                //                                    this->gradients_m[(*it)] = expr.Derivative(*it, found);
+                //                                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                //                                }
+#endif
+
+//                                ids_m.clear();
+                //                ids_m.set_empty_key(NULL);
+                expr.PushIds(ids_m);
+                // expr.GetIdRange(this->iv_min, this->iv_max);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                indepedndent_variables_iterator it;
+                g.resize(IDGenerator::instance()->current() + 1);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
+                    bool found = false;
+                    this->g[*it].first = true;
+                    this->g[*it].second = expr.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
+                }
+                //                expr.GetIdRange(this->iv_min, this->iv_max);
+                if (Variable::is_supporting_arbitrary_order) {
+                    std::vector<Statement<REAL_T> > temp_stmnt;
+                    expr.Push(temp_stmnt);
+                    this->statements_m = temp_stmnt;
+                }
+
+
+            }
+            this->SetValue(expr.GetValue());
+            return *this;
+        }
+
+        /**
+         * 
+         * @param rhs
+         * @return 
+         */
+        template<class T>
+        Variable& operator+=(const ExpressionBase<REAL_T, T>& rhs) {
+            //            return *this = (*this +rhs);
+            //has_m.resize(IDGenerator::instance()->current() + 1);
+            if (Variable::is_recording_g) {
+
+#if defined(USE_HASH_TABLE)
+                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                    bool found = false;
+                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value + rhs.Derivative(*it, found);
+                }
+#else
+                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                //                    bool found = false;
+                //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] + rhs.Derivative(*it, found);
+                //                }
+#endif
+
+                // rhs.GetIdRange(this->iv_min, this->iv_max);
+
+                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
+                indepedndent_variables_iterator it;
+                rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
+                    bool found = true;
+                    this->g[*it].first = true;
+                    this->g[*it].second = this->g[*it].second + rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
+                }
+
+                if (Variable::is_supporting_arbitrary_order) {
+                    rhs.Push(this->statements_m);
+                    this->statements_m.push_back(Statement<REAL_T > (PLUS));
+                }
+
+            }
+            this->value_m += rhs.GetValue();
+            return *this;
+        }
+
+        Variable& operator+=(Variable& rhs) {
+            if (Variable::is_recording_g) {
+                //has_m.resize(IDGenerator::instance()->current() + 1);
+
+#if defined(USE_HASH_TABLE)
+                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                    bool found = false;
+                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value + rhs.Derivative(*it, found);
+                }
+#else
+                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                //                    bool found = false;
+                //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] + rhs.Derivative(*it, found);
+                //                }
+#endif
+
+                // rhs.GetIdRange(this->iv_min, this->iv_max);
+                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
+                indepedndent_variables_iterator it;
+                rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
+                    bool found = true;
+                    this->g[*it].first = true;
+                    this->g[*it].second = this->g[*it].second + rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
+                }
+
+                if (Variable::is_supporting_arbitrary_order) {
+                    rhs.Push(this->statements_m);
+                    this->statements_m.push_back(Statement<REAL_T > (PLUS));
+                }
+
+            }
+            //            rhs.GetIdRange(this->iv_min, this->iv_max);
+            this->value_m += rhs.GetValue();
+            return *this;
+        }
+
+        template<class T>
+        Variable& operator-=(const ExpressionBase<REAL_T, T>& rhs) {
+            return *this = (*this -rhs);
+            //            if (Variable::is_recording_g) {
+            //                ind_iterator it;
+            //#if defined(USE_HASH_TABLE)
+            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+            //                    bool found = false;
+            //                    this->gradients_m.Insert((*it))->value = (this->gradients_m.Lookup(*it)->value - rhs.Derivative(*it, found));
+            //                }
+            //#else
+            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+            //                    bool found = false;
+            //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] - rhs.Derivative(*it, found));
+            //                }
+            //#endif
+            //                if (Variable::is_supporting_arbitrary_order) {
+            //                    rhs.Push(this->statements_m);
+            //                    this->statements_m.push_back(Statement(MINUS));
+            //                }
+            //            }
+            //            this->value_m -= rhs.GetValue();
+            //            return *this;
+        }
+
+        Variable& operator-=(Variable& rhs) {
+            if (Variable::is_recording_g) {
+                //has_m.resize(IDGenerator::instance()->current() + 1);
+
+#if defined(USE_HASH_TABLE)
+                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                    bool found = false;
+                    this->gradients_m.Insert((*it))->value = (this->gradients_m.Lookup(*it)->value - rhs.Derivative(*it, found));
+                }
+#else
+                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                //                    bool found = false;
+                //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] - rhs.Derivative(*it, found));
+                //                }
+#endif
+                // rhs.GetIdRange(this->iv_min, this->iv_max);
+                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
+                indepedndent_variables_iterator it;
+                rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
+                    bool found = true;
+                    this->g[*it] = this->g[*it] - rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
+                }
+                if (Variable::is_supporting_arbitrary_order) {
+                    rhs.Push(this->statements_m);
+                    this->statements_m.push_back(Statement<REAL_T > (MINUS));
+                }
+            }
+            this->value_m -= rhs.GetValue();
+            return *this;
+        }
+
+        template<class T>
+        Variable& operator*=(const ExpressionBase<REAL_T, T>& rhs) {
+            return *this = (*this * rhs);
+            //            if (Variable::is_recording_g) {
+            //                ind_iterator it;
+            //#if defined(USE_HASH_TABLE)
+            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+            //                    bool found = false;
+            //                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
+            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+            //                }
+            //#else
+            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+            //                    bool found = false;
+            //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
+            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+            //                }
+            //#endif
+            //                if (Variable::is_supporting_arbitrary_order) {
+            //                    rhs.Push(this->statements_m);
+            //                    this->statements_m.push_back(Statement(MULTIPLY));
+            //                }
+            //            }
+            //            this->value_m *= rhs.GetValue();
+            return *this;
+        }
+
+        Variable& operator*=(Variable& rhs) {
+            if (Variable::is_recording_g) {
+                //has_m.resize(IDGenerator::instance()->current() + 1);
+
+#if defined(USE_HASH_TABLE)
+                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                    bool found = false;
+                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
+                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                }
+#else
+                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                //                    bool found = false;
+                //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
+                //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                //                }
+#endif
+                //
+                //                rhs.GetIdRange(this->iv_min, this->iv_max);
+                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
+                indepedndent_variables_iterator it;
+                rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
+                    bool found = true;
+                    this->g[*it] = this->g[*it] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
+                    //                    this->gradients_m[*it] = g[*it];
+                }
+
+                if (Variable::is_supporting_arbitrary_order) {
+                    rhs.Push(this->statements_m);
+                    this->statements_m.push_back(Statement<REAL_T > (MULTIPLY));
+                }
+            }
+            this->value_m *= rhs.GetValue();
+            return *this;
+        }
+
+        template<class T>
+        Variable& operator/=(const ExpressionBase<REAL_T, T>& rhs) {
+            return *this = (*this / rhs);
+            //            if (Variable::is_recording_g) {
+            //                ind_iterator it;
+            //#if defined(USE_HASH_TABLE)
+            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+            //                    bool found = false;
+            //                    this->gradients_m.Insert(*it)->value = (this->gradients_m.Lookup(*it)->value * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
+            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+            //                }
+            //#else
+            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+            //                    bool found = false;
+            //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
+            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+            //                }
+            //#endif
+            //                if (Variable::is_supporting_arbitrary_order) {
+            //                    rhs.Push(this->statements_m);
+            //                    this->statements_m.push_back(Statement(DIVIDE));
+            //                }
+            //            }
+            //            this->value_m /= rhs.GetValue();
+            return *this;
+        }
+
+        Variable& operator/=(Variable& rhs) {
+            if (Variable::is_recording_g) {
+                //has_m.resize(IDGenerator::instance()->current() + 1);
+
+#if defined(USE_HASH_TABLE)
+                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                    bool found = false;
+                    this->gradients_m.Insert(*it)->value = (this->gradients_m.Lookup(*it)->value * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
+                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                }
+#else
+                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
+                //                    bool found = false;
+                //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
+                //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
+                //                }
+#endif
+                //                rhs.GetIdRange(this->iv_min, this->iv_max);
+                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
+                indepedndent_variables_iterator it;
+                rhs.PushIds(ids_m);
+                g.resize(IDGenerator::instance()->current() + 1);
+                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
+                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
+                    bool found = true;
+                    this->g[*it] = (this->g[*it] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
+                    //                    this->gradients_m[*it] = g[*it];
+                }
+                if (Variable::is_supporting_arbitrary_order) {
+                    rhs.Push(this->statements_m);
+                    this->statements_m.push_back(Statement<REAL_T > (DIVIDE));
+                }
+            }
+            this->value_m /= rhs.GetValue();
+            return *this;
+        }
+
+        // And likewise for a Constant on the rhs
+
+        Variable& operator+=(const REAL_T& rhs) {
+            value_m += rhs;
+            if (Variable::IsRecording()) {
+                if (Variable::is_supporting_arbitrary_order) {
+                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
+                    this->statements_m.push_back(Statement<REAL_T > (PLUS));
+                }
+            }
+            return *this;
+        }
+
+        Variable& operator-=(const REAL_T& rhs) {
+
+            if (Variable::IsRecording()) {
+                if (Variable::is_supporting_arbitrary_order) {
+                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
+                    this->statements_m.push_back(Statement<REAL_T > (MINUS));
+                }
+            }
+            value_m -= rhs;
+            return *this;
+        }
+
+        Variable& operator*=(const REAL_T& rhs) {
+            if (Variable::IsRecording()) {
+                if (Variable::is_supporting_arbitrary_order) {
+                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
+                    this->statements_m.push_back(Statement<REAL_T > (MULTIPLY));
+                }
+            }
+            return *this = (*this * rhs);
+        }
+
+        Variable& operator/=(const REAL_T& rhs) {
+            if (Variable::IsRecording()) {
+                if (Variable::is_supporting_arbitrary_order) {
+                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
+                    this->statements_m.push_back(Statement<REAL_T > (DIVIDE));
+                }
+            }
+            return *this = (*this / rhs);
         }
 
         const REAL_T Diff(const Variable &wrt) {
@@ -2589,881 +4605,7 @@ namespace ad {
             return stack.top().second;
         }
 
-        /**
-         * Control function. If true, derivatives are computed. If false
-         * expressions are only evaluated.
-         * 
-         * @param is_recording
-         */
-        static void SetRecording(const bool &is_recording) {
-            Variable::is_recording_g = is_recording;
-        }
 
-        /**
-         * If true, derivatives are calculated and stored. If false,
-         * expressions are evaluated for value only.
-         * 
-         * @return 
-         */
-        static bool IsRecording() {
-            return Variable::is_recording_g;
-        }
-
-        /**
-         * If set to true, the expression is recorded into a vector of 
-         * statements that can be manipulated to compute derivatives of 
-         * arbitrary order. This functionality is costly and is rarely required,
-         * thus default setting is false.
-         * 
-         * @param support_arbitrary_order
-         */
-        static void SetSupportArbitraryOrder(const bool &support_arbitrary_order) {
-            Variable::is_supporting_arbitrary_order = support_arbitrary_order;
-        }
-
-        /*
-         * If true, expressions are recorded into a vector of statements that 
-         * can be used later to compute derivatives of arbitrary order, or
-         * be used to build expression strings.
-         * 
-         */
-        static bool IsSupportingArbitraryOrder() {
-            return Variable::is_supporting_arbitrary_order;
-        }
-
-        /**
-         * Returns the value of this variable.
-         * 
-         * @return 
-         */
-        inline const REAL_T GetValue() const {
-            return this->value_m;
-        }
-
-        /**
-         * Sets the value of this variable. If the variable is bounded, 
-         * the value will be set between the min and max boundary. If the
-         * value is less than the minimum boundary, the variables value is 
-         * set to minimum boundary. If the  value is greater than the maximum
-         * boundary, the variables value is set to maximum boundary. If the 
-         * value is signaling nan, the value is set to the mid point between
-         * the min and max boundary. 
-         * 
-         * @param value
-         */
-        void SetValue(const REAL_T &value) {
-            if (this->bounded_m) {
-                if (value != value) {//nan
-                    this->value_m = this->min_boundary_m + (this->max_boundary_m - this->min_boundary_m) / 2.0;
-
-                    return;
-                }
-
-                if (value<this->min_boundary_m) {
-                    this->value_m = this->min_boundary_m;
-                } else if (value>this->max_boundary_m) {
-                    this->value_m = this->max_boundary_m;
-
-
-                } else {
-                    this->value_m = value;
-                }
-            } else {
-                this->value_m = value;
-            }
-        }
-
-        /**
-         * Returns the name of this variable. Names are not initialized and 
-         * if it is not set this function will return a empty string.
-         * @return 
-         */
-        std::string GetName() const {
-            return name_m;
-        }
-
-        /**
-         * Set the name of this variable.
-         * 
-         * @param name
-         */
-        void SetName(std::string name) {
-            this->name_m = name;
-        }
-
-        /**
-         * Returns true if this variable is bounded. Otherwise,
-         * false.
-         * 
-         * @return 
-         */
-        bool IsBounded() {
-            return this->bounded_m;
-        }
-
-        /**
-         * Set the min and max boundary for this variable. 
-         * @param min
-         * @param max
-         */
-        void SetBounds(const REAL_T& min, const REAL_T& max) {
-            this->bounded_m = true;
-            this->max_boundary_m = max;
-            this->min_boundary_m = min;
-            this->SetValue(this->GetValue());
-        }
-
-        /**
-         * Return the minimum boundary for this variable. The default value 
-         * is the results of std::numeric_limits<REAL_t>::min().
-         * 
-         * @return 
-         */
-        const REAL_T GetMinBoundary() {
-            return this->min_boundary_m;
-        }
-
-        /**
-         * Return the maximum boundary for this variable. The default value 
-         * is the results of std::numeric_limits<REAL_t>::max().
-         * 
-         * @return 
-         */
-        const REAL_T GetMaxBoundary() {
-            return this->max_boundary_m;
-        }
-
-        /**
-         * Make this Variable an independent variable. If set to true,
-         * the Variables unique identifier is registered in the static set
-         * of independent variables. During function evaluations, gradient 
-         * information is accumulated in post-order wrt to variables in the 
-         * static set of independent variables. If set false, this Variables 
-         * unique identifier will be removed from the set, if it existed.
-         * 
-         * 
-         * To access the derivative wrt to a Variable, call function:
-         * 
-         * const REAL_t wrt(const Variable & ind)
-         * 
-         * 
-         * @param is_independent
-         */
-        void SetAsIndependent(const bool &is_independent) {
-            if (this->iv_id_m == 0) {
-                this->iv_id_m = IDGenerator::instance()->next();
-                if (Variable<REAL_T>::IsSupportingArbitraryOrder()) {
-                    this->statements_m.clear();
-                    this->statements_m.push_back(Statement<REAL_T > (VARIABLE, this->GetValue(), this->GetId()));
-                }
-                this->id_m = iv_id_m;
-                if (this->iv_min == std::numeric_limits<uint32_t>::max() && this->iv_max == std::numeric_limits<uint32_t>::min()) {
-                    this->iv_max = this->GetId();
-                    this->iv_min = this->GetId();
-                }
-            }
-            if (this->is_independent_m && !is_independent) {
-                //                Variable::independent_variables_g.erase(this->GetId());
-                this->id_m = 0;
-                this->is_independent_m = false;
-            }
-
-            if (!this->is_independent_m && is_independent) {
-                //                Variable::independent_variables_g.insert(this->GetId());
-                this->id_m = this->iv_id_m;
-                this->is_independent_m = true;
-            }
-        }
-
-        bool IsIndependent() {
-            return this->is_independent_m;
-        }
-
-        /**
-         * Returns the derivative with respect to a variables who's
-         * unique identifier is equal to the parameter id.
-         * 
-         * @param id
-         * @param found
-         * @return 
-         */
-        const REAL_T Derivative(const uint32_t &id, bool &found) const {
-
-
-
-            if (this->GetId() == id) {
-                found = true;
-                return 1.0;
-
-            } else {
-
-#if defined(USE_HASH_TABLE)
-                HashTable::Cell* entry = this->gradients_m.Lookup(id);
-
-                if (entry != NULL) {
-                    return entry->value;
-                } else {
-                    return 0.0;
-                }
-
-#else
-
-                //                if(id < this->g.size()){
-                //                    if(g[id] != 0){
-                //                        found = true;
-                //                    }
-                //                    
-                //                    return g[id];
-                //                }
-
-                //                std::find(this->ids_m.begin(),this->ids_m.end(),id );
-
-                //                if (ad::binary_search(ids_m.begin(), ids_m.end(), id)) {
-                //                    found = true;
-                //                    return g[id];
-                //                } else {
-                //                    return 0.0;
-                //                }
-                //                
-                if (id < g.size()) {
-                    if (g[id].first) {
-                        found = true;
-                        return g[id].second;
-                    } else {
-                        return 0.0;
-                    }
-                } else {
-                    return 0.0;
-                }
-                //                if (this->ids_m.find(id) != this->ids_m.end()) {
-                //                    found = true;
-                //                    return g[id].second;
-                //                } else {
-                //                    return 0.0;
-                //                }
-
-                //                 const_grads_iterator git = this->gradients_m.find(id);
-                //                if (git != this->gradients_m.end()) {
-                //                    found = true;
-                //                    return git->second;
-                //                } else {
-                //                    Variable<REAL_T>::misses_g++;
-                //                    return 0.0;
-                //                }
-            }
-
-#endif
-
-
-        }
-
-        void GetIdRange(uint32_t &min, uint32_t & max) const {
-
-            if (this->iv_min < min) {
-                min = this->iv_min;
-            }
-
-            if (this->iv_max > max) {
-                max = this->iv_max;
-            }
-
-            if (this->GetId() > 0) {
-                if (this->GetId() < min) {
-                    min = this->GetId();
-                }
-
-                //                if (this->GetId()) {
-                //                    max = this->GetId();
-                //                }
-            }
-            //
-            //                        if (min == std::numeric_limits<uint32_t>::max()) {
-            //                            min = max;
-            //                        }
-
-            //            std::cout << min << " " << max << "\n";
-
-
-
-        }
-
-        void Push(std::vector<Statement<REAL_T> > &statements) const {
-            statements.insert(statements.end(), this->statements_m.begin(), statements_m.end());
-            //            if (this->statements_m.size() > 0) {
-            //                statements.insert(statements.end(), this->statements_m.begin(), statements_m.end());
-            //            } else {
-            //                statements.push_back(Statement<REAL_T > (VARIABLE, this->GetValue(), this->GetId()));
-            //            }
-        }
-
-        void PushIds(IdsSet &ids) const {
-            if (this->GetId() != 0) {
-                //                uint32_t id = uint32_t
-                ids.insert(this->GetId());
-            } else {
-                ids.insert(this->ids_m.begin(), this->ids_m.end());
-            }
-        }
-
-        /**
-         * Finds the derivative in the encapsulated gradient map 
-         * w.r.t a variable. 
-         * 
-         * @param ind
-         * @return 
-         */
-        const REAL_T WRT(const Variable & ind) {
-
-#if defined(USE_HASH_TABLE)
-            HashTable::Cell* entry = this->gradients_m.Lookup(ind.GetId());
-
-            if (entry != NULL) {
-                return entry->value;
-            } else {
-                return 0.0;
-            }
-#else
-
-            if (ind.GetId() < g.size()) {
-                if (g[ind.GetId()].first) {
-
-                    return g[ind.GetId()].second;
-                } else {
-                    return 0.0;
-                }
-            } else {
-                return 0.0;
-            }
-            //            if (this->ids_m.find(ind.GetId()) != this->ids_m.end()) {
-            //                //                found = true;
-            //                return g[ind.GetId()].second;
-            //            } else {
-            //                return 0.0;
-            //            }
-
-            //            const_grads_iterator git = this->gradients_m.find(ind.GetId());
-            //            if (git != this->gradients_m.end()) {
-            //                return git->second;
-            //            } else {
-            //                return 0;
-            //            }
-#endif
-        }
-
-        /**
-         * Finds the derivative in the encapsulated gradient map 
-         * w.r.t a variable. 
-         * @param ind
-         * @return 
-         */
-        const REAL_T WRT(const Variable & ind) const {
-
-#if defined(USE_HASH_TABLE)
-            HashTable::Cell* entry = this->gradients_m.Lookup(ind.GetId());
-
-            if (entry != NULL) {
-                return entry->value;
-            } else {
-                return 0.0;
-            }
-#else
-
-            if (ind.GetId() < g.size()) {
-                if (g[ind.GetId()].first) {
-
-                    return g[ind.GetId()].second;
-                } else {
-                    return 0.0;
-                }
-            } else {
-                return 0.0;
-            }
-            //            if (this->ids_m.find(ind.GetId()) != this->ids_m.end()) {
-            //                //                found = true;
-            //                return g[ind.GetId()].second;
-            //            } else {
-            //                return 0.0;
-            //            }
-            //            const_grads_iterator git = this->gradients_m.find(ind.GetId());
-            //            if (git != this->gradients_m.end()) {
-            //                return git->second;
-            //            } else {
-            //                return 0;
-            //            }
-#endif
-        }
-
-        const std::string Serialize() {
-
-        }
-
-        void Deserialize(const std::string &str) {
-
-        }
-
-        /**
-         * Set the variable equal to the real type rhs.
-         * 
-         * The gradient map will be cleared.
-         * 
-         * @param rhs
-         * @return 
-         */
-        Variable& operator=(const REAL_T& rhs) {
-            this->SetValue(rhs);
-            //            iv_min = std::numeric_limits<uint32_t>::max();
-            //            iv_max = std::numeric_limits<uint32_t>::min();
-
-#if defined(USE_HASH_TABLE)
-            this->gradients_m.Clear();
-#else
-            //            this->gradients_m.clear();
-            this->g.clear();
-            if (Variable::IsRecording()) {
-                if (Variable::is_supporting_arbitrary_order) {
-                    this->statements_m.clear();
-                    this->statements_m.push_back(Statement<REAL_T > (VARIABLE, this->GetValue(), this->GetId()));
-                }
-            }
-#endif
-
-            return *this;
-        }
-
-        /**
-         * Sets the value of this Variable to that of rhs. Derivatives 
-         * are stored in the encapsulated gradient map.
-         * 
-         * @param rhs
-         * @return 
-         */
-        Variable& operator=(const Variable& other) {
-            //                        this->id = other.getId();
-            //has_m.resize(IDGenerator::instance()->current() + 1);
-            value_m = other.GetValue();
-
-
-            //            this->gradients.clear();
-            if (ad::Variable<REAL_T>::is_recording_g) {
-
-#if defined(USE_HASH_TABLE)
-                ind_iterator it;
-                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                    bool found = false;
-                    this->gradients_m.Insert(*it)->value = other.Derivative(*it, found);
-                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                }
-#else
-                //                this->gradients.insert(rhs.gradients.begin(), rhs.gradients.end());
-                //                ind_iterator it;
-                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                //                    bool found = false;
-                //                    this->gradients_m[(*it)] = other.Derivative(*it, found);
-                //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                //                }
-                // other.GetIdRange(this->iv_min, this->iv_max);
-                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
-                indepedndent_variables_iterator it;
-                other.PushIds(ids_m);
-                g.resize(IDGenerator::instance()->current() + 1);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
-                    bool found = true;
-                    this->g[*it].first = true;
-                    this->g[*it].second = other.Derivative(*it, found);
-                    //                    this->gradients_m[*it] = g[*it];
-                }
-
-
-#endif
-
-                if (Variable::is_supporting_arbitrary_order) {
-
-                    std::vector<Statement<REAL_T> > temp_stmnt;
-                    other.Push(temp_stmnt);
-                    this->statements_m = temp_stmnt;
-                }
-
-            }
-            this->is_independent_m = other.is_independent_m;
-            return *this;
-        }
-
-        /**
-         * Set the Variables value to the result of the expression rhs. 
-         * Derivatives are calculated and stored in the encapsulated 
-         * gradient map.
-         * @param rhs
-         * @return 
-         */
-        template<class T>
-        Variable& operator=(const ExpressionBase<REAL_T, T>& expr) {
-            //            this->id_m = expr.GetId();
-            //has_m.resize(IDGenerator::instance()->current() + 1);
-            if (Variable::is_recording_g) {
-                //                ind_iterator it; // = this->gradients.lower_bound();
-#if defined(USE_HASH_TABLE)
-                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                    bool found = false;
-                    this->gradients_m.Insert(*it)->value = expr.Derivative(*it, found);
-                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                }
-#else
-                //                                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                //                                    bool found = false;
-                //                                    this->gradients_m[(*it)] = expr.Derivative(*it, found);
-                //                                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                //                                }
-#endif
-
-//                ids_m.clear();
-//                ids_m.set_empty_key(NULL);
-                expr.PushIds(ids_m);
-                // expr.GetIdRange(this->iv_min, this->iv_max);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                indepedndent_variables_iterator it;
-                g.resize(IDGenerator::instance()->current() + 1);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
-                    bool found = false;
-                    this->g[*it].first = true;
-                    this->g[*it].second = expr.Derivative(*it, found);
-                    //                    this->gradients_m[*it] = g[*it];
-                }
-                //                expr.GetIdRange(this->iv_min, this->iv_max);
-                if (Variable::is_supporting_arbitrary_order) {
-                    std::vector<Statement<REAL_T> > temp_stmnt;
-                    expr.Push(temp_stmnt);
-                    this->statements_m = temp_stmnt;
-                }
-
-
-            }
-            value_m = expr.GetValue();
-            return *this;
-        }
-
-        /**
-         * 
-         * @param rhs
-         * @return 
-         */
-        template<class T>
-        Variable& operator+=(const ExpressionBase<REAL_T, T>& rhs) {
-            //            return *this = (*this +rhs);
-            //has_m.resize(IDGenerator::instance()->current() + 1);
-            if (Variable::is_recording_g) {
-
-#if defined(USE_HASH_TABLE)
-                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                    bool found = false;
-                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value + rhs.Derivative(*it, found);
-                }
-#else
-                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                //                    bool found = false;
-                //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] + rhs.Derivative(*it, found);
-                //                }
-#endif
-
-                // rhs.GetIdRange(this->iv_min, this->iv_max);
-
-                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
-                indepedndent_variables_iterator it;
-                rhs.PushIds(ids_m);
-                g.resize(IDGenerator::instance()->current() + 1);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
-                    bool found = true;
-                    this->g[*it].first = true;
-                    this->g[*it].second = this->g[*it].second + rhs.Derivative(*it, found);
-                    //                    this->gradients_m[*it] = g[*it];
-                }
-
-                if (Variable::is_supporting_arbitrary_order) {
-                    rhs.Push(this->statements_m);
-                    this->statements_m.push_back(Statement<REAL_T > (PLUS));
-                }
-
-            }
-            this->value_m += rhs.GetValue();
-            return *this;
-        }
-
-        Variable& operator+=(Variable& rhs) {
-            if (Variable::is_recording_g) {
-                //has_m.resize(IDGenerator::instance()->current() + 1);
-
-#if defined(USE_HASH_TABLE)
-                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                    bool found = false;
-                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value + rhs.Derivative(*it, found);
-                }
-#else
-                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                //                    bool found = false;
-                //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] + rhs.Derivative(*it, found);
-                //                }
-#endif
-
-                // rhs.GetIdRange(this->iv_min, this->iv_max);
-                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
-                indepedndent_variables_iterator it;
-                rhs.PushIds(ids_m);
-                g.resize(IDGenerator::instance()->current() + 1);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
-                    bool found = true;
-                    this->g[*it].first = true;
-                    this->g[*it].second = this->g[*it].second + rhs.Derivative(*it, found);
-                    //                    this->gradients_m[*it] = g[*it];
-                }
-
-                if (Variable::is_supporting_arbitrary_order) {
-                    rhs.Push(this->statements_m);
-                    this->statements_m.push_back(Statement<REAL_T > (PLUS));
-                }
-
-            }
-            //            rhs.GetIdRange(this->iv_min, this->iv_max);
-            this->value_m += rhs.GetValue();
-            return *this;
-        }
-
-        template<class T>
-        Variable& operator-=(const ExpressionBase<REAL_T, T>& rhs) {
-            return *this = (*this -rhs);
-            //            if (Variable::is_recording_g) {
-            //                ind_iterator it;
-            //#if defined(USE_HASH_TABLE)
-            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-            //                    bool found = false;
-            //                    this->gradients_m.Insert((*it))->value = (this->gradients_m.Lookup(*it)->value - rhs.Derivative(*it, found));
-            //                }
-            //#else
-            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-            //                    bool found = false;
-            //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] - rhs.Derivative(*it, found));
-            //                }
-            //#endif
-            //                if (Variable::is_supporting_arbitrary_order) {
-            //                    rhs.Push(this->statements_m);
-            //                    this->statements_m.push_back(Statement(MINUS));
-            //                }
-            //            }
-            //            this->value_m -= rhs.GetValue();
-            //            return *this;
-        }
-
-        Variable& operator-=(Variable& rhs) {
-            if (Variable::is_recording_g) {
-                //has_m.resize(IDGenerator::instance()->current() + 1);
-
-#if defined(USE_HASH_TABLE)
-                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                    bool found = false;
-                    this->gradients_m.Insert((*it))->value = (this->gradients_m.Lookup(*it)->value - rhs.Derivative(*it, found));
-                }
-#else
-                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                //                    bool found = false;
-                //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] - rhs.Derivative(*it, found));
-                //                }
-#endif
-                // rhs.GetIdRange(this->iv_min, this->iv_max);
-                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
-                indepedndent_variables_iterator it;
-                rhs.PushIds(ids_m);
-                g.resize(IDGenerator::instance()->current() + 1);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
-                    bool found = true;
-                    this->g[*it] = this->g[*it] - rhs.Derivative(*it, found);
-                    //                    this->gradients_m[*it] = g[*it];
-                }
-                if (Variable::is_supporting_arbitrary_order) {
-                    rhs.Push(this->statements_m);
-                    this->statements_m.push_back(Statement<REAL_T > (MINUS));
-                }
-            }
-            this->value_m -= rhs.GetValue();
-            return *this;
-        }
-
-        template<class T>
-        Variable& operator*=(const ExpressionBase<REAL_T, T>& rhs) {
-            return *this = (*this * rhs);
-            //            if (Variable::is_recording_g) {
-            //                ind_iterator it;
-            //#if defined(USE_HASH_TABLE)
-            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-            //                    bool found = false;
-            //                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
-            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-            //                }
-            //#else
-            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-            //                    bool found = false;
-            //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
-            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-            //                }
-            //#endif
-            //                if (Variable::is_supporting_arbitrary_order) {
-            //                    rhs.Push(this->statements_m);
-            //                    this->statements_m.push_back(Statement(MULTIPLY));
-            //                }
-            //            }
-            //            this->value_m *= rhs.GetValue();
-            return *this;
-        }
-
-        Variable& operator*=(Variable& rhs) {
-            if (Variable::is_recording_g) {
-                //has_m.resize(IDGenerator::instance()->current() + 1);
-
-#if defined(USE_HASH_TABLE)
-                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                    bool found = false;
-                    this->gradients_m.Insert(*it)->value = this->gradients_m.Lookup(*it)->value * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
-                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                }
-#else
-                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                //                    bool found = false;
-                //                    this->gradients_m[(*it)] = this->gradients_m[(*it)] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
-                //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                //                }
-#endif
-                //
-                //                rhs.GetIdRange(this->iv_min, this->iv_max);
-                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
-                indepedndent_variables_iterator it;
-                rhs.PushIds(ids_m);
-                g.resize(IDGenerator::instance()->current() + 1);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
-                    bool found = true;
-                    this->g[*it] = this->g[*it] * rhs.GetValue() + this->GetValue() * rhs.Derivative(*it, found);
-                    //                    this->gradients_m[*it] = g[*it];
-                }
-
-                if (Variable::is_supporting_arbitrary_order) {
-                    rhs.Push(this->statements_m);
-                    this->statements_m.push_back(Statement<REAL_T > (MULTIPLY));
-                }
-            }
-            this->value_m *= rhs.GetValue();
-            return *this;
-        }
-
-        template<class T>
-        Variable& operator/=(const ExpressionBase<REAL_T, T>& rhs) {
-            return *this = (*this / rhs);
-            //            if (Variable::is_recording_g) {
-            //                ind_iterator it;
-            //#if defined(USE_HASH_TABLE)
-            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-            //                    bool found = false;
-            //                    this->gradients_m.Insert(*it)->value = (this->gradients_m.Lookup(*it)->value * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
-            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-            //                }
-            //#else
-            //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-            //                    bool found = false;
-            //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
-            //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-            //                }
-            //#endif
-            //                if (Variable::is_supporting_arbitrary_order) {
-            //                    rhs.Push(this->statements_m);
-            //                    this->statements_m.push_back(Statement(DIVIDE));
-            //                }
-            //            }
-            //            this->value_m /= rhs.GetValue();
-            return *this;
-        }
-
-        Variable& operator/=(Variable& rhs) {
-            if (Variable::is_recording_g) {
-                //has_m.resize(IDGenerator::instance()->current() + 1);
-
-#if defined(USE_HASH_TABLE)
-                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                    bool found = false;
-                    this->gradients_m.Insert(*it)->value = (this->gradients_m.Lookup(*it)->value * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
-                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                }
-#else
-                //                for (it = Variable::independent_variables_g.begin(); it != Variable::independent_variables_g.end(); ++it) {
-                //                    bool found = false;
-                //                    this->gradients_m[(*it)] = (this->gradients_m[(*it)] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
-                //                    //                std::cout<<"diff wrt "<<(*it)<<" = " <<rhs.Derivative(*it, found);
-                //                }
-#endif
-                //                rhs.GetIdRange(this->iv_min, this->iv_max);
-                //                for (uint32_t i = this->iv_min; i < this->iv_max + 1; i++) {
-                indepedndent_variables_iterator it;
-                rhs.PushIds(ids_m);
-                g.resize(IDGenerator::instance()->current() + 1);
-                //                for (uint32_t i = this->iv_min; i< this->iv_max + 1; i++) {
-                for (it = this->ids_m.begin(); it != ids_m.end(); ++it) {
-                    bool found = true;
-                    this->g[*it] = (this->g[*it] * rhs.GetValue() - this->GetValue() * rhs.Derivative(*it, found)) / (rhs.GetValue() * rhs.GetValue());
-                    //                    this->gradients_m[*it] = g[*it];
-                }
-                if (Variable::is_supporting_arbitrary_order) {
-                    rhs.Push(this->statements_m);
-                    this->statements_m.push_back(Statement<REAL_T > (DIVIDE));
-                }
-            }
-            this->value_m /= rhs.GetValue();
-            return *this;
-        }
-
-        // And likewise for a Literal on the rhs
-
-        Variable& operator+=(const REAL_T& rhs) {
-            value_m += rhs;
-            if (Variable::IsRecording()) {
-                if (Variable::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (PLUS));
-                }
-            }
-            return *this;
-        }
-
-        Variable& operator-=(const REAL_T& rhs) {
-
-            if (Variable::IsRecording()) {
-                if (Variable::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (MINUS));
-                }
-            }
-            value_m -= rhs;
-            return *this;
-        }
-
-        Variable& operator*=(const REAL_T& rhs) {
-            if (Variable::IsRecording()) {
-                if (Variable::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (MULTIPLY));
-                }
-            }
-            return *this = (*this * rhs);
-        }
-
-        Variable& operator/=(const REAL_T& rhs) {
-            if (Variable::IsRecording()) {
-                if (Variable::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (DIVIDE));
-                }
-            }
-            return *this = (*this / rhs);
-        }
 
 
     };
@@ -3480,612 +4622,6 @@ namespace ad {
 
     template<class REAL_T, int group>
     bool Variable<REAL_T, group>::is_supporting_arbitrary_order = false;
-
-    template<class REAL_T>
-    class Var : public ExpressionBase<REAL_T, Var<REAL_T> > {
-        REAL_T value_m;
-        uint32_t iv_id_m; //id when is a independent Var.
-        std::string name_m;
-        bool bounded_m;
-        REAL_T min_boundary_m;
-        REAL_T max_boundary_m;
-        bool is_independent_m;
-
-        std::vector<REAL_T> gradient_m;
-
-        uint32_t iv_min; //if this Var is caching derivatives, this is the min independent Var.
-        uint32_t iv_max; //if this Var is caching derivatives, this is the max independent Var.
-
-
-        //        static std::set<uint32_t> independent_Vars_g;
-        static bool is_recording_g;
-
-        static bool is_supporting_arbitrary_order;
-
-
-        //        std::vector<bool> has_m;
-        typedef std::vector<Statement<REAL_T> > ExpressionStatements;
-        ExpressionStatements statements_m;
-
-    public:
-
-        /**
-         * Default conclassor.
-         */
-        Var() : ExpressionBase<REAL_T, Var<REAL_T> >(0), value_m(0.0), bounded_m(false), is_independent_m(false), iv_id_m(0) {
-
-        }
-
-        /**
-         * Conclass a Var with a initial value. Optional parameter to make
-         * it a independent Var.
-         * 
-         * @param value
-         * @param is_independent
-         */
-        Var(const REAL_T& value, bool is_independent = false) : is_independent_m(is_independent), ExpressionBase<REAL_T, Var<REAL_T> >(0), value_m(value), iv_id_m(0) {
-
-            iv_min = std::numeric_limits<uint32_t>::max();
-            iv_max = std::numeric_limits<uint32_t>::min();
-            if (is_independent) {
-                //                this->id_m = IDGenerator::instance()->next();
-                this->SetAsIndependent(is_independent);
-                this->bounded_m = false;
-                this->min_boundary_m = std::numeric_limits<REAL_T>::min();
-                this->max_boundary_m = std::numeric_limits<REAL_T>::max();
-
-            }
-
-        }
-
-        /**
-         * Copy conclassor. 
-         * 
-         * @param rhs
-         */
-        Var(const Var& orig) {
-            value_m = orig.GetValue();
-            this->id_m = orig.GetId();
-            this->iv_id_m = orig.iv_id_m;
-
-            this->is_independent_m = orig.is_independent_m;
-            this->bounded_m = orig.bounded_m;
-            this->min_boundary_m = orig.min_boundary_m;
-            this->max_boundary_m = orig.max_boundary_m;
-            iv_min = orig.iv_min;
-            iv_max = orig.iv_max;
-            this->gradient_m = orig.gradient_m;
-
-
-        }
-
-        /**
-         * Conclasss a Var from expression expr.
-         * @param rhs
-         */
-        template<class T>
-        Var(const ExpressionBase<REAL_T, T>& expr) {
-
-            //has_m.resize(IDGenerator::instance()->current() + 1);
-
-            this->bounded_m = false;
-            iv_min = std::numeric_limits<uint32_t>::max();
-            iv_max = std::numeric_limits<uint32_t>::min();
-            if (Var::is_recording_g) {
-
-
-                this->gradient_m.resize(IDGenerator::instance()->current() + 1);
-                expr.GetIdRange(this->iv_min, this->iv_max);
-                for (int i = this->iv_min; i < this->iv_max + 1; i++) {
-                    bool found = false;
-                    this->gradient_m[i] = expr.Derivative(i, found);
-                }
-
-            }
-            value_m = expr.GetValue();
-
-        }
-
-        ~Var() {
-#if !defined(USE_HASH_TABLE)
-            //            if (this->is_independent_m) {
-            //                this->independent_Vars_g.erase(this->GetId());
-            //            }
-            this->statements_m.clear();
-            //            this->gradients_m.clear();
-
-#endif
-        }
-
-        size_t Size() {
-            return this->statements_m.size();
-        }
-
-        /**
-         * Control function. If true, derivatives are computed. If false
-         * expressions are only evaluated.
-         * 
-         * @param is_recording
-         */
-        static void SetRecording(const bool &is_recording) {
-            Var::is_recording_g = is_recording;
-        }
-
-        /**
-         * If true, derivatives are calculated and stored. If false,
-         * expressions are evaluated for value only.
-         * 
-         * @return 
-         */
-        static bool IsRecording() {
-            return Var::is_recording_g;
-        }
-
-        /**
-         * If set to true, the expression is recorded into a vector of 
-         * statements that can be manipulated to compute derivatives of 
-         * arbitrary order. This functionality is costly and is rarely required,
-         * thus default setting is false.
-         * 
-         * @param support_arbitrary_order
-         */
-        static void SetSupportArbitraryOrder(const bool &support_arbitrary_order) {
-            Var::is_supporting_arbitrary_order = support_arbitrary_order;
-        }
-
-        /*
-         * If true, expressions are recorded into a vector of statements that 
-         * can be used later to compute derivatives of arbitrary order, or
-         * be used to build expression strings.
-         * 
-         */
-        static bool IsSupportingArbitraryOrder() {
-            return Var::is_supporting_arbitrary_order;
-        }
-
-        /**
-         * Returns the value of this Var.
-         * 
-         * @return 
-         */
-        inline const REAL_T GetValue() const {
-            return this->value_m;
-        }
-
-        /**
-         * Sets the value of this Var. If the Var is bounded, 
-         * the value will be set between the min and max boundary. If the
-         * value is less than the minimum boundary, the Vars value is 
-         * set to minimum boundary. If the  value is greater than the maximum
-         * boundary, the Vars value is set to maximum boundary. If the 
-         * value is signaling nan, the value is set to the mid point between
-         * the min and max boundary. 
-         * 
-         * @param value
-         */
-        void SetValue(const REAL_T &value) {
-            if (this->bounded_m) {
-                if (value != value) {//nan
-                    this->value_m = this->min_boundary_m + (this->max_boundary_m - this->min_boundary_m) / 2.0;
-
-                    return;
-                }
-
-                if (value<this->min_boundary_m) {
-                    this->value_m = this->min_boundary_m;
-                } else if (value>this->max_boundary_m) {
-                    this->value_m = this->max_boundary_m;
-
-
-                } else {
-                    this->value_m = value;
-                }
-            } else {
-                this->value_m = value;
-            }
-        }
-
-        /**
-         * Returns the name of this Var. Names are not initialized and 
-         * if it is not set this function will return a empty string.
-         * @return 
-         */
-        std::string GetName() const {
-            return name_m;
-        }
-
-        /**
-         * Set the name of this Var.
-         * 
-         * @param name
-         */
-        void SetName(std::string name) {
-            this->name_m = name;
-        }
-
-        /**
-         * Returns true if this Var is bounded. Otherwise,
-         * false.
-         * 
-         * @return 
-         */
-        bool IsBounded() {
-            return this->bounded_m;
-        }
-
-        /**
-         * Set the min and max boundary for this Var. 
-         * @param min
-         * @param max
-         */
-        void SetBounds(const REAL_T& min, const REAL_T& max) {
-            this->bounded_m = true;
-            this->max_boundary_m = max;
-            this->min_boundary_m = min;
-            this->SetValue(this->GetValue());
-        }
-
-        /**
-         * Return the minimum boundary for this Var. The default value 
-         * is the results of std::numeric_limits<REAL_t>::min().
-         * 
-         * @return 
-         */
-        const REAL_T GetMinBoundary() {
-            return this->min_boundary_m;
-        }
-
-        /**
-         * Return the maximum boundary for this Var. The default value 
-         * is the results of std::numeric_limits<REAL_t>::max().
-         * 
-         * @return 
-         */
-        const REAL_T GetMaxBoundary() {
-            return this->max_boundary_m;
-        }
-
-        /**
-         * Make this Var an independent Var. If set to true,
-         * the Vars unique identifier is registered in the static set
-         * of independent Vars. During function evaluations, gradient 
-         * information is accumulated in post-order wrt to Vars in the 
-         * static set of independent Vars. If set false, this Vars 
-         * unique identifier will be removed from the set, if it existed.
-         * 
-         * 
-         * To access the derivative wrt to a Var, call function:
-         * 
-         * const REAL_t wrt(const Var & ind)
-         * 
-         * 
-         * @param is_independent
-         */
-        void SetAsIndependent(const bool &is_independent) {
-            if (this->iv_id_m == 0) {
-                this->iv_id_m = IDGenerator::instance()->next();
-
-                this->id_m = iv_id_m;
-                if (this->iv_min == std::numeric_limits<uint32_t>::max() && this->iv_max == std::numeric_limits<uint32_t>::min()) {
-                    this->iv_max = this->GetId();
-                    this->iv_min = this->GetId();
-                }
-            }
-            if (this->is_independent_m && !is_independent) {
-                //                Var::independent_Vars_g.erase(this->GetId());
-                this->id_m = 0;
-                this->is_independent_m = false;
-            }
-
-            if (!this->is_independent_m && is_independent) {
-                //                Var::independent_Vars_g.insert(this->GetId());
-                this->id_m = this->iv_id_m;
-                this->is_independent_m = true;
-            }
-        }
-
-        bool IsIndependent() {
-            return this->is_independent_m;
-        }
-
-        /**
-         * Returns the derivative with respect to a Vars who's
-         * unique identifier is equal to the parameter id.
-         * 
-         * @param id
-         * @param found
-         * @return 
-         */
-        const REAL_T Derivative(const uint32_t &id, bool &found) const {
-
-
-            if (this->GetId() == id) {
-                found = true;
-                return 1.0;
-
-            } else {
-
-                if (id <= this->gradient_m.size()) {
-                    REAL_T d = gradient_m[id];
-                    if (d != 0) {
-                        found = true;
-                        return d;
-                    } else {
-                        return 0;
-                    }
-
-                }
-
-            }
-            return 0.0;
-        }
-
-        void GetIdRange(uint32_t &min, uint32_t & max) const {
-
-            if (this->iv_min < min) {
-                min = this->iv_min;
-            }
-
-            if (this->iv_max > max) {
-                max = this->iv_max;
-            }
-
-            if (this->GetId() > 0) {
-                if (this->GetId() < min) {
-                    min = this->GetId();
-                }
-
-                //                if (this->GetId()) {
-                //                    max = this->GetId();
-                //                }
-            }
-            //
-            //                        if (min == std::numeric_limits<uint32_t>::max()) {
-            //                            min = max;
-            //                        }
-
-            //            std::cout << min << " " << max << "\n";
-
-
-
-        }
-
-        void Push(std::vector<Statement<REAL_T> > &statements) const {
-            statements.insert(statements.end(), this->statements_m.begin(), statements_m.end());
-            //            if (this->statements_m.size() > 0) {
-            //                statements.insert(statements.end(), this->statements_m.begin(), statements_m.end());
-            //            } else {
-            //                statements.push_back(Statement<REAL_T > (Var, this->GetValue(), this->GetId()));
-            //            }
-        }
-
-        /**
-         * Finds the derivative in the encapsulated gradient map 
-         * w.r.t a Var. 
-         * 
-         * @param ind
-         * @return 
-         */
-        const REAL_T WRT(const Var & ind) {
-
-            if (ind.GetId()<this->gradient_m.size()) {
-                return this->gradient_m[ind.GetId()];
-            } else {
-                return 0.0;
-            }
-        }
-
-        /**
-         * Finds the derivative in the encapsulated gradient map 
-         * w.r.t a Var. 
-         * @param ind
-         * @return 
-         */
-        const REAL_T WRT(const Var & ind) const {
-            if (ind.GetId()<this->gradient_m.size()) {
-                return this->gradient_m[ind.GetId()];
-            } else {
-                return 0.0;
-            }
-        }
-
-        const std::string Serialize() {
-
-        }
-
-        void Deserialize(const std::string &str) {
-
-        }
-
-        /**
-         * Set the Var equal to the real type rhs.
-         * 
-         * The gradient map will be cleared.
-         * 
-         * @param rhs
-         * @return 
-         */
-        Var& operator=(const REAL_T& rhs) {
-            this->SetValue(rhs);
-
-            if (Var::IsRecording()) {
-                this->gradient_m.clear();
-            }
-
-            return *this;
-        }
-
-        /**
-         * Sets the value of this Var to that of rhs. Derivatives 
-         * are stored in the encapsulated gradient map.
-         * 
-         * @param rhs
-         * @return 
-         */
-        Var& operator=(const Var& other) {
-
-            value_m = other.GetValue();
-            if (ad::Var<REAL_T>::is_recording_g) {
-                this->gradient_m = other.gradient_m;
-            }
-            this->is_independent_m = other.is_independent_m;
-            return *this;
-        }
-
-        /**
-         * Set the Vars value to the result of the expression rhs. 
-         * Derivatives are calculated and stored in the encapsulated 
-         * gradient map.
-         * @param rhs
-         * @return 
-         */
-        template<class T>
-        Var& operator=(const ExpressionBase<REAL_T, T>& expr) {
-            //            this->id_m = expr.GetId();
-            //has_m.resize(IDGenerator::instance()->current() + 1);
-            if (Var::is_recording_g) {
-                this->gradient_m.resize(IDGenerator::instance()->current() + 1);
-                expr.GetIdRange(this->iv_min, this->iv_max);
-                for (int i = this->iv_min; i < this->iv_max + 1; i++) {
-                    bool found = false;
-                    this->gradient_m[i] = expr.Derivative(i, found);
-                }
-            }
-            value_m = expr.GetValue();
-            return *this;
-        }
-
-        /**
-         * 
-         * @param rhs
-         * @return 
-         */
-        template<class T>
-        Var& operator+=(const ExpressionBase<REAL_T, T>& rhs) {
-            return *this = (*this +rhs);
-            //            //has_m.resize(IDGenerator::instance()->current() + 1);
-            //            if (Var::is_recording_g) {
-            //
-            //            }
-            //            this->value_m += rhs.GetValue();
-            //            return *this;
-        }
-
-        Var& operator+=(Var& rhs) {
-            if (Var::is_recording_g) {
-                this->gradient_m.resize(IDGenerator::instance()->current() + 1);
-                rhs.GetIdRange(this->iv_min, this->iv_max);
-                for (int i = this->iv_min; i < this->iv_max + 1; i++) {
-                    bool found = false;
-                    this->gradient_m[i] = this->gradient_m[i] + rhs.Derivative(i, found);
-                }
-            }
-
-            this->value_m += rhs.GetValue();
-            return *this;
-        }
-
-        template<class T>
-        Var& operator-=(const ExpressionBase<REAL_T, T>& rhs) {
-            return *this = (*this -rhs);
-
-        }
-
-        Var& operator-=(Var& rhs) {
-            if (Var::is_recording_g) {
-                this->gradient_m.resize(IDGenerator::instance()->current() + 1);
-                rhs.GetIdRange(this->iv_min, this->iv_max);
-                for (int i = this->iv_min; i < this->iv_max + 1; i++) {
-                    bool found = false;
-                    this->gradient_m[i] = this->gradient_m[i] - rhs.Derivative(i, found);
-                }
-            }
-
-            this->value_m -= rhs.GetValue();
-            return *this;
-        }
-
-        template<class T>
-        Var& operator*=(const ExpressionBase<REAL_T, T>& rhs) {
-            return *this = (*this * rhs);
-
-            return *this;
-        }
-
-        Var& operator*=(Var& rhs) {
-            if (Var::is_recording_g) {
-
-            }
-            this->value_m *= rhs.GetValue();
-            return *this;
-        }
-
-        template<class T>
-        Var& operator/=(const ExpressionBase<REAL_T, T>& rhs) {
-            return *this = (*this / rhs);
-
-            return *this;
-        }
-
-        Var& operator/=(Var& rhs) {
-            if (Var::is_recording_g) {
-
-            }
-            this->value_m /= rhs.GetValue();
-            return *this;
-        }
-
-        // And likewise for a Literal on the rhs
-
-        Var& operator+=(const REAL_T& rhs) {
-            value_m += rhs;
-            if (Var::IsRecording()) {
-                if (Var::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (PLUS));
-                }
-            }
-            return *this;
-        }
-
-        Var& operator-=(const REAL_T& rhs) {
-
-            if (Var::IsRecording()) {
-                if (Var::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (MINUS));
-                }
-            }
-            value_m -= rhs;
-            return *this;
-        }
-
-        Var& operator*=(const REAL_T& rhs) {
-            if (Var::IsRecording()) {
-                if (Var::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (MULTIPLY));
-                }
-            }
-            return *this = (*this * rhs);
-        }
-
-        Var& operator/=(const REAL_T& rhs) {
-            if (Var::IsRecording()) {
-                if (Var::is_supporting_arbitrary_order) {
-                    this->statements_m.push_back(Statement<REAL_T > (CONSTANT, rhs));
-                    this->statements_m.push_back(Statement<REAL_T > (DIVIDE));
-                }
-            }
-            return *this = (*this / rhs);
-        }
-
-
-    };
-
-
-    template<class REAL_T>
-    bool Var<REAL_T>::is_recording_g = true;
 
     template<class REAL_T, class T, class TT>
     inline const int operator==(const ad::ExpressionBase<REAL_T, T>& lhs, const ad::ExpressionBase<REAL_T, TT>& rhs) {

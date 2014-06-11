@@ -17,7 +17,7 @@ template<class T>
 class CatchAtAge : public ad::FunctionMinimizer<T> {
     typedef ad::Variable<T> variable;
 
-   
+
     std::string input_file_path;
 
     /*
@@ -56,9 +56,8 @@ public:
     std::vector<variable> predicted_N;
     std::vector<variable> ratio_N;
 
-
     void Initialize() {
-         StreamedDataFile<double> input_file;
+        StreamedDataFile<double> input_file;
         input_file_path = "/Users/matthewsupernaw/NetBeansProjects/ET4AD/catage.dat___";
         input_file.Parse(input_file_path);
 
@@ -89,7 +88,7 @@ public:
             log_sel_coff[i] = variable();
             log_sel_coff[i].SetBounds(-15.0, 15.0);
             log_sel_coff[i].SetName(ss.str());
-            this->Register(log_sel_coff[i],2);
+            this->Register(log_sel_coff[i], 2);
         }
 
         this->log_relpop = std::vector<variable > (nyrs + nages - 1);
@@ -99,7 +98,7 @@ public:
             log_relpop[i] = variable();
             log_relpop[i].SetBounds(-15.0, 15.0);
             log_relpop[i].SetName(ss.str());
-            this->Register(log_relpop[i],2);
+            this->Register(log_relpop[i], 2);
         }
 
 
@@ -110,7 +109,7 @@ public:
             effort_devs[i] = variable(0.0);
             effort_devs[i].SetBounds(-5.0, 5.0);
             effort_devs[i].SetName(ss.str());
-            this->Register(effort_devs[i],3);
+            this->Register(effort_devs[i], 3);
 
         }
         this->log_sel = std::vector<variable > (nages);
@@ -147,7 +146,7 @@ public:
         for (int i = 1; i < nages; i++) {
             relwt[i] = w;
             w++;
-            relwt[i] = std::sqrt(relwt[i]);//std::pow(relwt[i], (T) .5);
+            relwt[i] = std::pow(relwt[i], (T) .5);
             if (relwt[i] > maxw) {
                 maxw = relwt[i];
             }
@@ -198,7 +197,7 @@ public:
         for (i = 0; i < nyrs; i++) {
             for (j = 0; j < nages; j++) {
                 Z[i * nages + j] = F[i * nages + j] + M;
-                S[i * nages + j] = std::mfexp(static_cast<T>(-1.0) * Z[i * nages + j]);
+                S[i * nages + j] = std::mfexp(static_cast<T> (-1.0) * Z[i * nages + j]);
             }
 
         }
@@ -226,12 +225,12 @@ public:
         }
 
         // calculated predicted numbers at age for next year
-        //        for (j = 0; j < nages - 1; j++) {
-        //            predicted_N[j + 1] = N[((nyrs - 1) * nages) + j] * S[((nyrs - 1) * nages) + j];
-        //            //            std::cout << predicted_N[j+1] << " "<<N[((nyrs-1)*nages ) + j] <<" "<<S[((nyrs-1)*nages ) + j]<<"\n";
-        //            ratio_N[j + 1] = predicted_N[j + 1] / N[((nyrs - 1) * nages) + (j + 1)];
-        //            //            std::cout<< ratio_N[j + 1]<<" ";
-        //        }
+//                for (j = 0; j < nages - 1; j++) {
+//                    predicted_N[j + 1] = N[((nyrs - 1) * nages) + j] * S[((nyrs - 1) * nages) + j];
+//                    //            std::cout << predicted_N[j+1] << " "<<N[((nyrs-1)*nages ) + j] <<" "<<S[((nyrs-1)*nages ) + j]<<"\n";
+//                    ratio_N[j + 1] = predicted_N[j + 1] / N[((nyrs - 1) * nages) + (j + 1)];
+//                    //            std::cout<< ratio_N[j + 1]<<" ";
+//                }
         //        exit(0);
         // calculated predicted Biomass for next year for
         // adjusted profile likelihood
@@ -259,9 +258,9 @@ public:
 
     void ObjectiveFunction(variable & f) {
         //
-//                if(this->function_calls_m == 251){
-//                    exit(0);
-//                }
+        //                if(this->function_calls_m == 251){
+        //                    exit(0);
+        //                }
         f = 0.0;
 
         GetMortalityAndSurvivalRates();
@@ -293,28 +292,29 @@ public:
             //            std::cout << this->log_q << ":" << this->log_popscale << " " << f << "---" << sum.wrt(this->log_q) << "\n";
         }
 
-        f += (T) 0.5 * T(C.size() + effort_devs.size()) * std::log(sum + (T) 0.1 * norm2<variable > (effort_devs));
-    
+        f += (T) 0.5 * T(C.size() + nyrs) * std::log(sum + (T) 0.1 * norm2<variable > (effort_devs));
+
         //std::cout<<f.ExpressionSize()<<"\n";
         //        std::cout << this->log_q << ":" << this->log_popscale << " " << f << "---" << f.wrt(this->log_q) << "\n";
         //        exit(0);
-//        f.Diff(this->log_popscale);
-//        std::cout<<ad::Variable<T>::misses_g<<"\n";
-//       std::cout<<"current ="<< f.gv.size()<<"\n";
-//                std::cout<<f.Diff(this->log_popscale)<<" == "<<f.WRT(this->log_popscale)<<"\n";
+        //        f.Diff(this->log_popscale);
+        //        std::cout<<ad::Variable<T>::misses_g<<"\n";
+        //       std::cout<<"current ="<< f.gv.size()<<"\n";
+        //                std::cout<<f.Diff(this->log_popscale)<<" == "<<f.WRT(this->log_popscale)<<"\n";
     }
 
     template<class TT>
     const TT norm2(std::vector<TT> &vect) {
-        TT ret = TT(0.0);
-        for (int i = 0; i < vect.size(); i++) {
-            ret = ret+ vect[i] * vect[i];
+        TT ret;// = TT(0.0);
+        size_t s= vect.size();
+        for (int i = 0; i < s; i++) {
+            ret +=vect[i]*vect[i];//std::pow(vect[i], 2.0);
         }
         return ret;
     }
 
     void Finalize() {
-       
+
         std::cout << BOLD << "Estimated number of fish:\n" << DEFAULT_IO;
         for (int i = 0; i < nyrs; i++) {
             for (int j = 0; j < nages; j++) {
@@ -351,23 +351,30 @@ public:
         //        sleep(1);
         std::valarray<T> gradient = this->CalculateGradient();
 
-        std::ofstream out;
-        out.open("gradient.data");
+//        std::ofstream out;
+//        out.open("gradient.data");
+//
+//        out << "ParName\tValue\tGradient\n";
+//        for (int i = 0; i < this->GetActiveParameters().size(); i++) {
+//            out << this->GetActiveParameters().at(i)->GetName()
+//                    << "\t" << this->GetActiveParameters().at(i)->GetValue()
+//                    << "\t" << gradient[i] << "\n";
+//        }
 
-        out << "ParName\tValue\tGradient\n";
-        for (int i = 0; i < this->GetActiveParameters().size(); i++) {
-            out << this->GetActiveParameters().at(i)->GetName()
-                    << "\t" << this->GetActiveParameters().at(i)->GetValue()
-                    << "\t" << gradient[i] << "\n";
-        }
+        //                std::valarray<std::valarray<double> > hessian = this->EstimatedHessian();
 
-//                std::valarray<std::valarray<double> > hessian = this->EstimatedHessian();
-
-
+        std::cout << "f = " << this->GetFunctionValue() << "\n";
+        
+//        std::ofstream out;
+//        out.open("/Users/matthewsupernaw/NetBeansProjects/catage/dist/Release/Clang-MacOSX/catage.pin");
+//        
+//        for(int i =0; i < this->GetActiveParameters().size(); i++){
+//            out<<this->GetActiveParameters().at(i)->GetValue()<<" ";
+//        }
 
     }
-    
-    
+
+
 
 
 private:

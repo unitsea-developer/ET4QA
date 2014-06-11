@@ -31,6 +31,11 @@
     <itemPath>ET4AD2.hpp</itemPath>
     <itemPath>FunctionMinimizer.hpp</itemPath>
     <itemPath>IOStream.hpp</itemPath>
+    <itemPath>Portfolio.hpp</itemPath>
+    <itemPath>Regression.hpp</itemPath>
+    <itemPath>Statistics.hpp</itemPath>
+    <itemPath>Variable2.hpp</itemPath>
+    <itemPath>sp500</itemPath>
   </logicalFolder>
   <sourceRootList>
     <Elem>support/judy-template-master/src</Elem>
@@ -77,6 +82,7 @@
           <linkerLibItems>
             <linkerLibFileItem>../../../Downloads/admb/build/dist/lib/libadmbo.a</linkerLibFileItem>
           </linkerLibItems>
+          <commandLine>-lcurl</commandLine>
         </linkerTool>
       </compileType>
     </conf>

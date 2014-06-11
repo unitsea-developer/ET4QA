@@ -15,11 +15,11 @@
 
 
 #ifndef BIGFLOAT_MANTISSA_BITS
-#define BIGFLOAT_MANTISSA_BITS 8
+#define BIGFLOAT_MANTISSA_BITS 64
 #endif
 
 #ifndef BIGFLOAT_EXPONENT_BITS
-#define BIGFLOAT_EXPONENT_BITS 8
+#define BIGFLOAT_EXPONENT_BITS 64
 #endif
 
 
@@ -958,6 +958,7 @@ namespace std {
         
         if (y == T(0))
             return 1;
+        
         ad::BigFloat<T> temp(pow(x, y*T(.5)));
         if (y % T(2.0) == 0)
             return temp * temp;
